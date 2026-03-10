@@ -1,0 +1,10 @@
+# ROS 2 build files
+build/
+install/
+log/
+
+# Python & AI
+__pycache__/
+*.pyc
+.ollama/
+*.models/
