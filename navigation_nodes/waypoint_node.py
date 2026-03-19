@@ -6,326 +6,232 @@ from mavros_msgs.msg import State
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 import math
 import time
-from sensor_msgs.msg import LaserScan
-from std_msgs.msg import Int32
-from std_msgs.msg import Float32 # Add to imports
-from std_msgs.msg import String
+from gz.transport13 import Node as GzNode
+from gz.msgs10.pointcloud_packed_pb2 import PointCloudPacked
+import struct
+from std_msgs.msg import Int32, Float32, String
+import numpy as np
+from drone_nav.astar_planner import AStarPlanner
 
 class WaypointNode(Node):
-
     def __init__(self):
         super().__init__('waypoint_node')
 
-        # Ask user for goal
+        # 1. Inputs & Config
         self.goal_x = float(input("Enter goal X: "))
         self.goal_y = float(input("Enter goal Y: "))
         self.goal_z = float(input("Enter goal Z: "))
+        
+        self.grid_offset = (40.0, 40.0) 
+        self.planner = AStarPlanner(grid_size=(100, 100), resolution=1.0, grid_offset=self.grid_offset)
+        self.occupancy_grid = np.zeros((100, 100)) 
+        self.current_path = []
 
-        # Publisher
-        self.publisher = self.create_publisher(
-            PoseStamped,
-            '/mavros/setpoint_position/local',
-            10)
-        self.arm_client = self.create_client(CommandBool, '/mavros/cmd/arming')   
-        # QoS for MAVROS topics
-        qos_profile = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=10
-        )
-
-        # Subscribe to position
-        self.subscription = self.create_subscription(
-            PoseStamped,
-            '/mavros/local_position/pose',
-            self.pose_callback,
-            qos_profile)
-
-        # Subscribe to state
-        self.state_sub = self.create_subscription(
-            State,
-            '/mavros/state',
-            self.state_callback,
-            10)
-
+        # 2. State Variables
+        self.current_x = None
+        self.current_y = None
+        self.current_z = None
+        self.current_orientation = None
+        self.is_armed = False
         self.current_state = State()
-
-        self.current_x = 0.0
-        self.current_y = 0.0
-        self.current_z = 0.0
-
-        self.offboard_set = False
-        self.armed = False
-        self.mission_started = False
-        self.landing_initiated = False 
         self.phase = "WAIT_CONNECTION"
         self.setpoint_counter = 0
         
-        self.min_distance = 999.0
+        self.min_distance = 10.0
+        self.critical_dist = 10.0
+        self.left_dist = 10.0
+        self.right_dist = 10.0
+
+        # 3. ROS Communications
+        self.publisher = self.create_publisher(PoseStamped, '/mavros/setpoint_position/local', 10)
+        self.arm_client = self.create_client(CommandBool, '/mavros/cmd/arming')
         
-        self.timer = self.create_timer(0.05, self.main_loop)
-        # QoS for MAVROS topics
-        qos_profile = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=10
-        )
-        self.scan_sub = self.create_subscription(
-            LaserScan,
-            '/world/baylands/model/x500_depth_0/link/lidar_link/sensor/gpu_lidar_3d/scan',
-            self.scan_callback,
-            10
-        )
-        self.ai_status = 0
-        self.ai_sub = self.create_subscription(Int32, '/drone/ai_status', self.ai_callback, 10)
-        self.alt_pub = self.create_publisher(Float32, '/drone/current_altitude', 10)
+        qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=5)
+        self.create_subscription(PoseStamped, '/mavros/local_position/pose', self.pose_callback, qos)
+        self.create_subscription(State, '/mavros/state', self.state_callback, 10)
         
-        self.vla_sub = self.create_subscription(String, '/drone/vla_decision', self.vla_cb, 10)
-        self.vla_action = "STRAIGHT"
-    
-    
-    def vla_cb(self, msg):
-        self.vla_action = msg.data    
-    def ai_callback(self, msg):
-            self.ai_status = msg.data
+        # 4. Gazebo Transport
+        self.gz_node = GzNode()
+        self.gz_node.subscribe(
+            PointCloudPacked,
+            "/world/default/model/x500_depth_0/link/lidar_link/sensor/gpu_lidar_3d/scan/points",
+            self.gz_scan_callback
+        )
+
+        self.timer = self.create_timer(0.1, self.main_loop)
+        self.get_logger().info("Node Initialized. Waiting for local position...")
 
     def state_callback(self, msg):
         self.current_state = msg
+        self.is_armed = msg.armed
 
     def pose_callback(self, msg):
         self.current_x = msg.pose.position.x
         self.current_y = msg.pose.position.y
         self.current_z = msg.pose.position.z
-        
-        #publish altitude
-        alt_msg=Float32()
-        alt_msg.data=self.current_z
-        self.alt_pub.publish(alt_msg)
+        self.current_orientation = msg.pose.orientation
 
-    def set_mode(self, mode):
-        client = self.create_client(SetMode, '/mavros/set_mode')
-        while not client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting for set_mode service...")
-        request = SetMode.Request()
-        request.custom_mode = mode
-        client.call_async(request)
+    def get_yaw(self):
+        if self.current_orientation is None: return 0.0
+        q = self.current_orientation
+        return math.atan2(2*(q.w*q.z + q.x*q.y), 1 - 2*(q.y*q.y + q.z*q.z))
 
-    def arm(self):
-        client = self.create_client(CommandBool, '/mavros/cmd/arming')
-        while not client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting for arming service...")
-        request = CommandBool.Request()
-        request.value = True
-        client.call_async(request)
+    def gz_scan_callback(self, msg):
+        print("GZ CALLBACK RUNNING")
+        yaw = self.get_yaw()
+        data = msg.data
+        step = msg.point_step
         
-    def scan_callback(self, msg):
-        valid_ranges = [r for r in msg.ranges if not math.isinf(r) and not math.isnan(r) and r > 0.5]
-        if valid_ranges:
-            self.min_distance = min(valid_ranges)
-            # FORCE PRINT TO TERMINAL
-            print(f"--- LIDAR DISTANCE: {self.min_distance:.2f}m ---")
-            self.get_logger().info(f"Min distance: {self.min_distance:.2f}")
+        # Temporary lists to store distances for each direction
+        front_points = []
+        left_points = []
+        right_points = []
+
+        # Decay old obstacles slightly to keep map fresh
+        self.occupancy_grid *= 0.95 
+
+        for i in range(0, len(data), step * 2): # Step*2 to save CPU
+            x_l, y_l, z_l = struct.unpack_from('fff', data, i)
             
-    def get_quaternion_from_euler(self, roll, pitch, yaw):
-        """
-        Converts euler roll, pitch, yaw to quaternion (x, y, z, w)
-        """
-        qx = math.sin(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) - math.cos(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
-        qy = math.cos(roll/2) * math.sin(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.cos(pitch/2) * math.sin(yaw/2)
-        qz = math.cos(roll/2) * math.cos(pitch/2) * math.sin(yaw/2) - math.sin(roll/2) * math.sin(pitch/2) * math.cos(yaw/2)
-        qw = math.cos(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
-        return [qx, qy, qz, qw]            
+            # Filter ground and far noise
+            if z_l < -0.5 or z_l > 1.0: continue
+            dist = math.sqrt(x_l**2 + y_l**2)
+            if dist > 8.0 or dist < 0.4: continue
+
+            # Map to World Coordinates
+            world_obs_x = self.current_x + (x_l * math.cos(yaw) - y_l * math.sin(yaw))
+            world_obs_y = self.current_y + (x_l * math.sin(yaw) + y_l * math.cos(yaw))
+
+            # Mark Grid
+            gx = int((world_obs_x + self.grid_offset[0]))
+            gy = int((world_obs_y + self.grid_offset[1]))
+            if 0 <= gx < 100 and 0 <= gy < 100:
+                self.occupancy_grid[gx][gy] = 1.0
+            
+            # FRONT: Objects ahead within 1.0m width corridor
+            if x_l > 0 and abs(y_l) < 1.0:
+                front_points.append(dist)
+            
+            # LEFT: Objects to the left
+            if y_l > 1.0:
+                left_points.append(dist)
+                
+            # RIGHT: Objects to the right
+            if y_l < -1.0:
+                right_points.append(dist)
+
+        # Use median for stability, or default to 10.0 if no points found
+        self.min_distance = np.median(front_points) if front_points else 10.0
+        self.critical_dist = min(front_points) if front_points else 10.0
+        self.left_dist = np.median(left_points) if left_points else 10.0
+        self.right_dist = np.median(right_points) if right_points else 10.0
+
+        # 4. PRINT TO TERMINAL
+        self.get_logger().info(f"Lidar -> FRONT: {self.min_distance:.2f}m | LEFT: {self.left_dist:.2f}m | RIGHT: {self.right_dist:.2f}m")
+
+
+    def publish_setpoint(self, x, y, z, yaw=0.0):
+        msg = PoseStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "map"
+        msg.pose.position.x = float(x)
+        msg.pose.position.y = float(y)
+        msg.pose.position.z = float(z)
+        
+        # Simple yaw to quaternion
+        msg.pose.orientation.z = math.sin(yaw/2)
+        msg.pose.orientation.w = math.cos(yaw/2)
+        self.publisher.publish(msg)
 
     def main_loop(self):
-
-        # PHASE 1 — Wait for connection
+        if self.current_x is None: return
+        # phase-1 : waiting connection
+        # Connection & Arming Logic
         if self.phase == "WAIT_CONNECTION":
             if self.current_state.connected:
                 self.get_logger().info("Connected to FCU")
-                self.phase = "SEND_SETPOINTS"
+                self.phase = "STARTUP_STREAM"
             return
-
-        # PHASE 2 — Send dummy setpoints
-        if self.phase == "SEND_SETPOINTS":
-            hold_msg = PoseStamped()
-            hold_msg.header.frame_id = "map"
-            hold_msg.pose.position.x = self.current_x
-            hold_msg.pose.position.y = self.current_y
-            hold_msg.pose.position.z = 2.0
-
-            self.publisher.publish(hold_msg)
+        #phase-2 : setpoint
+        if self.phase == "STARTUP_STREAM":
+            self.publish_setpoint(self.current_x, self.current_y, 2.0)
             self.setpoint_counter += 1
-
-            if self.setpoint_counter > 40:
-                self.phase = "SET_OFFBOARD"
+            if self.setpoint_counter > 20: self.phase = "SET_OFFBOARD"
             return
-
-        # PHASE 3 — Set OFFBOARD
+        #phase-3 : set offboard
         if self.phase == "SET_OFFBOARD":
             self.get_logger().info("Setting OFFBOARD mode")
             self.set_mode("OFFBOARD")
             self.phase = "ARM"
             return
-
-        # PHASE 4 — Arm
+        #phase-4 : Arming
         if self.phase == "ARM":
             if self.current_state.mode == "OFFBOARD":
                 self.get_logger().info("Arming...")
-                self.arm()
+                req = CommandBool.Request(); req.value = True
+                self.arm_client.call_async(req)
                 self.phase = "TAKEOFF"
             return
-
-        # PHASE 5 — Wait until armed
+        #phase-5 : Takeoff
         if self.phase == "TAKEOFF":
-            if self.current_state.armed:
-                self.get_logger().info("Armed! Starting navigation")
+            self.publish_setpoint(self.current_x, self.current_y, self.goal_z)
+            if abs(self.current_z - self.goal_z) < 0.3:
+                self.get_logger().info("Altitude reached. Switching to NAVIGATE.")
                 self.phase = "NAVIGATE"
             return
-        # PHASE 6 — Navigation
+        #phase-6 : Navigation
+        # --- NAVIGATION PHASE ---
         if self.phase == "NAVIGATE":
-            dx = self.goal_x - self.current_x
-            dy = self.goal_y - self.current_y
-            dz = self.goal_z - self.current_z
-            distance = math.sqrt(dx**2 + dy**2 + dz**2)
-            
-            if distance < 1.0:
-                self.get_logger().info("Goal reached! Switching to LANDING phase.")
+            dist_to_goal = math.sqrt((self.goal_x - self.current_x)**2 + (self.goal_y - self.current_y)**2)
+            if dist_to_goal < 0.8:
+                self.get_logger().info("GOAL REACHED! Switching to Landing.")
                 self.phase = "LANDING"
                 return
-         
-            nav_msg = PoseStamped()
-            nav_msg.header.frame_id = "map"
 
-            # --- FIX: Initialize variables with current position as a fallback ---
-            target_x, target_y, target_z = self.current_x, self.current_y, self.current_z
+            # Replan if path is empty or blocked
+            if not self.current_path or self.critical_dist < 2.5:
+                start = (self.current_x, self.current_y)
+                goal = (self.goal_x, self.goal_y)
+                self.get_logger().info(f"A* Planning: {start} -> {goal}")
+                self.current_path = self.planner.plan(start, goal, self.occupancy_grid)
+                if not self.current_path:
+                    self.get_logger().warn("Path blocked! Hovering...")
+                    self.publish_setpoint(self.current_x, self.current_y, self.goal_z)
+                    return
 
-            # STATE 1: EMERGENCY STOP
-            if self.ai_status == 2:
-                self.get_logger().warn("AI AGENT: EMERGENCY STOP ACTIVATED")
-                # Positions stay as current_x/y/z initialized above
-        
-            elif self.ai_status == 0:
-                if "LEFT" in self.vla_action:
-                    self.get_logger().info("VLA Suggestion: Moving LEFT")
-                    target_x = self.current_x + 1.0
-                    target_y = self.current_y + 1.5
-                    target_z = self.goal_z
-                elif "RIGHT" in self.vla_action:
-                    self.get_logger().info("VLA Suggestion: Moving RIGHT")
-                    target_x = self.current_x + 1.0
-                    target_y = self.current_y - 1.5
-                    target_z = self.goal_z
-                else:
-                    # Normal Mission Path (Straight to goal)
-                    # We use a unit vector to move 1 meter at a time
-                    if distance > 0.1:
-                        direction_x = dx / distance
-                        direction_y = dy / distance
-                        target_x = self.current_x + direction_x
-                        target_y = self.current_y + direction_y
-                    target_z = self.goal_z
+            target_x, target_y = self.current_path[0]
+            
+            # SPEED CONTROL
+            max_step = 0.6
+            dx = target_x - self.current_x
+            dy = target_y - self.current_y
+            dist = math.sqrt(dx**2 + dy**2)
 
-            # --- STEP 2: CALCULATE YAW TOWARD TARGET ---
-            look_dx = target_x - self.current_x
-            look_dy = target_y - self.current_y
-            
-            if abs(look_dx) < 0.01 and abs(look_dy) < 0.01:
-                target_yaw = 0.0 
-            else:
-                target_yaw = math.atan2(look_dy, look_dx)
-            
-            q = self.get_quaternion_from_euler(0, 0, target_yaw)
+            if dist > max_step:
+                target_x = self.current_x + (dx/dist)*max_step
+                target_y = self.current_y + (dy/dist)*max_step
 
-            # --- STEP 3: CONSTRUCT MESSAGE ---
-            nav_msg.pose.position.x = target_x
-            nav_msg.pose.position.y = target_y
-            nav_msg.pose.position.z = target_z
-            nav_msg.pose.orientation.x = q[0]
-            nav_msg.pose.orientation.y = q[1]
-            nav_msg.pose.orientation.z = q[2]
-            nav_msg.pose.orientation.w = q[3]
-            
-            self.publisher.publish(nav_msg)
-            return
-            
-  
-            self.get_logger().info(f"Distance: {distance:.2f}")
+            # Popping reached waypoints
+            if dist < 0.8:
+                self.current_path.pop(0)
 
-            
-        # PHASE 7 — Dedicated Landing Phase
+            move_yaw = math.atan2(dy, dx)
+            self.publish_setpoint(target_x, target_y, self.goal_z, move_yaw)
+        #phase-7 : Landing
         if self.phase == "LANDING":
-            self.get_logger().info("Initiating Auto-Land...")
             self.set_mode("AUTO.LAND")
-            self.phase = "WAIT_FOR_TOUCHDOWN"
-            return
+            self.phase = "FINISHED"
 
-        if self.phase == "WAIT_FOR_TOUCHDOWN":
-            if self.current_z < 0.3:
-                self.get_logger().info("Touchdown! Disarming.")
-                # Add your disarm call here
-                self.phase = "FINISHED"
-            return
-
-            # If landing started → descend gradually
-            if self.landing_initiated:
-
-                land_msg = PoseStamped()
-                land_msg.header.frame_id = "map"
-                land_msg.pose.position.x = self.goal_x
-                land_msg.pose.position.y = self.goal_y
-
-                # Gradual descent
-                #new_z = self.current_z - 0.30
-                #if new_z < 0.1:
-                    #new_z = 0.0
-
-                land_msg.pose.position.z = 0.0
-                #We must also keep the Yaw fixed so it doesn't spin while landing
-                target_yaw = math.atan2(self.goal_y - self.current_y, self.goal_x - self.current_x)
-                q = self.get_quaternion_from_euler(0, 0, target_yaw)
-                land_msg.pose.orientation.x, land_msg.pose.orientation.y, land_msg.pose.orientation.z, land_msg.pose.orientation.w = q
-                self.publisher.publish(land_msg)
-
-                # Stop after touchdown
-                if self.current_z < 0.2:
-                    self.get_logger().info("Touchdown detected... Waiting 4 seconds to settle.")
-                    time.sleep(2.0)
-                    
-     
-                    request = CommandBool.Request()
-                    request.value = False
-                    self.arm_client.call_async(request)
-                    self.phase = "LANDED"
-                return
-
-            step_size = 1.0
-            if distance < 0.01:
-                return
-            direction_x = dx / distance
-            direction_y = dy / distance
-
-            # Calculate Yaw toward target
-            target_yaw = math.atan2(dy, dx)
-            q = self.get_quaternion_from_euler(0, 0, target_yaw)
-
-            nav_msg = PoseStamped()
-            nav_msg.header.frame_id = "map"
-            nav_msg.pose.position.x = self.current_x + direction_x * step_size
-            nav_msg.pose.position.y = self.current_y + direction_y * step_size
-            nav_msg.pose.position.z = self.goal_z
-
-            # Set the orientation so the camera faces the destination
-            nav_msg.pose.orientation.x = q[0]
-            nav_msg.pose.orientation.y = q[1]
-            nav_msg.pose.orientation.z = q[2]
-            nav_msg.pose.orientation.w = q[3]
-
-            self.publisher.publish(nav_msg)
-
+    def set_mode(self, mode):
+        client = self.create_client(SetMode, '/mavros/set_mode')
+        req = SetMode.Request(); req.custom_mode = mode
+        client.call_async(req)
 
 def main(args=None):
     rclpy.init(args=args)
     node = WaypointNode()
     rclpy.spin(node)
-    node.destroy_node()
     rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
