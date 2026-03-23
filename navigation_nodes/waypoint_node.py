@@ -12,6 +12,10 @@ import struct
 from std_msgs.msg import Int32, Float32, String
 import numpy as np
 from drone_nav.astar_planner import AStarPlanner
+import cv2
+from nav_msgs.msg import Path
+from visualization_msgs.msg import Marker
+from geometry_msgs.msg import PoseStamped, Point
 
 class WaypointNode(Node):
     def __init__(self):
@@ -34,18 +38,23 @@ class WaypointNode(Node):
         self.current_orientation = None
         self.is_armed = False
         self.current_state = State()
-        self.phase = "WAIT_CONNECTION"
         self.setpoint_counter = 0
         
         self.min_distance = 10.0
         self.critical_dist = 10.0
         self.left_dist = 10.0
         self.right_dist = 10.0
-
+        self.phase = "WAIT_CONNECTION"  # "IDLE", "NAVIGATE"
+        self.latest_ai_decision = "PATH_SAFE"  # "PATH_SAFE", "STOP"
+        self.stop_distance_threshold = 3.0
+        self.hover_pos = None
+        self.stop_cooldown = 0
         # 3. ROS Communications
         self.publisher = self.create_publisher(PoseStamped, '/mavros/setpoint_position/local', 10)
         self.arm_client = self.create_client(CommandBool, '/mavros/cmd/arming')
-        
+        # waypoint_node.py
+        self.path_pub = self.create_publisher(Path, '/drone/visual_path', 10)
+        self.goal_pub = self.create_publisher(Marker, '/drone/visual_goal', 10)
         qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=5)
         self.create_subscription(PoseStamped, '/mavros/local_position/pose', self.pose_callback, qos)
         self.create_subscription(State, '/mavros/state', self.state_callback, 10)
@@ -60,6 +69,45 @@ class WaypointNode(Node):
 
         self.timer = self.create_timer(0.1, self.main_loop)
         self.get_logger().info("Node Initialized. Waiting for local position...")
+        # Inside WaypointNode.__init__
+        self.latest_ai_decision = "PATH_SAFE" 
+        self.create_subscription(String, '/drone/vla_decision', self.vla_callback, 10)
+    
+    def show_debug_map(self):
+        """Creates a standalone visualization window without using ROS 2 bridge."""
+        # 1. Create a 500x500 base image (scaling the 100x100 grid by 5)
+        display_map = np.zeros((500, 500, 3), dtype=np.uint8)
+
+        # 2. Draw Occupancy Grid (Red for Obstacles)
+        # We find indices where grid is 1.0 (obstacle)
+        obs_idx = np.where(self.occupancy_grid > 0.5)
+        for i, j in zip(obs_idx[0], obs_idx[1]):
+            cv2.rectangle(display_map, (j*5, i*5), (j*5+5, i*5+5), (0, 0, 255), -1)
+
+        # 3. Draw A* Path (Blue Line)
+        if self.current_path:
+            for k in range(len(self.current_path) - 1):
+                # Convert world coords to grid index
+                p1 = (int((self.current_path[k][1] + self.grid_offset[1]) * 5), 
+                      int((self.current_path[k][0] + self.grid_offset[0]) * 5))
+                p2 = (int((self.current_path[k+1][1] + self.grid_offset[1]) * 5), 
+                      int((self.current_path[k+1][0] + self.grid_offset[0]) * 5))
+                cv2.line(display_map, p1, p2, (255, 0, 0), 2)
+
+        # 4. Draw the Drone (Green Circle)
+        drone_gx = int((self.current_x + self.grid_offset[0]) * 5)
+        drone_gy = int((self.current_y + self.grid_offset[1]) * 5)
+        cv2.circle(display_map, (drone_gy, drone_gx), 8, (0, 255, 0), -1)
+
+        # 5. Show Window
+        cv2.imshow("A* Navigation Debug", display_map)
+        cv2.waitKey(1)
+
+    def vla_callback(self, msg):
+        self.latest_ai_decision = msg.data.upper() # Standardize to upper case
+
+    def normalize_angle(self, angle):
+        return math.atan2(math.sin(angle), math.cos(angle))    
 
     def state_callback(self, msg):
         self.current_state = msg
@@ -179,44 +227,98 @@ class WaypointNode(Node):
                 self.get_logger().info("Altitude reached. Switching to NAVIGATE.")
                 self.phase = "NAVIGATE"
             return
-        #phase-6 : Navigation
-        # --- NAVIGATION PHASE ---
+        # --- PHASE-6: NAVIGATION (Consolidated Logic) ---
         if self.phase == "NAVIGATE":
+            # 1. Goal Check
             dist_to_goal = math.sqrt((self.goal_x - self.current_x)**2 + (self.goal_y - self.current_y)**2)
             if dist_to_goal < 0.8:
                 self.get_logger().info("GOAL REACHED! Switching to Landing.")
                 self.phase = "LANDING"
                 return
 
-            # Replan if path is empty or blocked
+            # 3. PATH PLANNING: A* Path Generation
             if not self.current_path or self.critical_dist < 2.5:
-                start = (self.current_x, self.current_y)
-                goal = (self.goal_x, self.goal_y)
-                self.get_logger().info(f"A* Planning: {start} -> {goal}")
-                self.current_path = self.planner.plan(start, goal, self.occupancy_grid)
-                if not self.current_path:
-                    self.get_logger().warn("Path blocked! Hovering...")
-                    self.publish_setpoint(self.current_x, self.current_y, self.goal_z)
-                    return
+                self.current_path = self.planner.plan((self.current_x, self.current_y), 
+                                                      (self.goal_x, self.goal_y), 
+                                                      self.occupancy_grid)
 
-            target_x, target_y = self.current_path[0]
+            if not self.current_path:
+                self.get_logger().warn("No path available. Hovering...")
+                self.publish_setpoint(self.current_x, self.current_y, self.goal_z)
+                return
             
-            # SPEED CONTROL
+            path_msg = Path()
+            path_msg.header.frame_id = "map"
+            path_msg.header.stamp = self.get_clock().now().to_msg()
+            
+            for waypoint in self.current_path:
+                pose = PoseStamped()
+                pose.pose.position.x = float(waypoint[0])
+                pose.pose.position.y = float(waypoint[1])
+                pose.pose.position.z = self.goal_z
+                path_msg.poses.append(pose)
+            
+            self.path_pub.publish(path_msg)
+
+            if self.current_path:
+                target_x, target_y = self.current_path[0]
+
+                # PATH-AWARE CHECK: Only stop if we are heading toward the obstacle
+                target_yaw = math.atan2(target_y - self.current_y, target_x - self.current_x)
+                angle_diff = abs(self.normalize_angle(target_yaw - self.get_yaw()))
+
+                # 1. Logic for "Sticky" STOP command
+                if "STOP" in self.latest_ai_decision and angle_diff < 0.8:
+                    self.stop_cooldown = 10 # Stay stopped for 10 cycles (1.0 second)
+    
+                # 2. Check if we are in the "Sticky" stop state
+                if self.stop_cooldown > 0:
+                    if self.hover_pos is None:
+                        self.hover_pos = (self.current_x, self.current_y)
+        
+                    self.publish_setpoint(self.hover_pos[0], self.hover_pos[1], self.goal_z)
+                    self.stop_cooldown -= 1 # Countdown every 0.1s cycle
+                    return
+                else:
+                    # Only clear hover once the cooldown is totally finished
+                    self.hover_pos = None
+
+            # 5. APPLY REACTIVE OFFSETS (LEFT/RIGHT)
+            offset_x, offset_y = 0.0, 0.0
+            if "LEFT" in self.latest_ai_decision:
+                yaw = self.get_yaw()
+                offset_x = -1.5 * math.sin(yaw) 
+                offset_y = 1.5 * math.cos(yaw)
+                self.get_logger().info("AI REACTING: Veering Left.")
+            elif "RIGHT" in self.latest_ai_decision:
+                yaw = self.get_yaw()
+                offset_x = 1.5 * math.sin(yaw)
+                offset_y = -1.5 * math.cos(yaw)
+                self.get_logger().info("AI REACTING: Veering Right.")
+
+            final_target_x = target_x + offset_x
+            final_target_y = target_y + offset_y
+
+            # 6. SPEED CONTROL & SMOOTHING
+            # Apply max_step to the FINAL modified target
             max_step = 0.6
-            dx = target_x - self.current_x
-            dy = target_y - self.current_y
-            dist = math.sqrt(dx**2 + dy**2)
+            dx = final_target_x - self.current_x
+            dy = final_target_y - self.current_y
+            dist_to_target = math.sqrt(dx**2 + dy**2)
 
-            if dist > max_step:
-                target_x = self.current_x + (dx/dist)*max_step
-                target_y = self.current_y + (dy/dist)*max_step
-
-            # Popping reached waypoints
-            if dist < 0.8:
+            if dist_to_target > max_step:
+                final_target_x = self.current_x + (dx/dist_to_target) * max_step
+                final_target_y = self.current_y + (dy/dist_to_target) * max_step
+            self.show_debug_map()
+            # 7. WAYPOINT PROGRESSION
+            # Check distance to the ORIGINAL A* point to see if we reached it
+            base_dist = math.sqrt((target_x - self.current_x)**2 + (target_y - self.current_y)**2)
+            if base_dist < 0.8:
                 self.current_path.pop(0)
 
+            # 8. FINAL PUBLISH (Exactly once per loop)
             move_yaw = math.atan2(dy, dx)
-            self.publish_setpoint(target_x, target_y, self.goal_z, move_yaw)
+            self.publish_setpoint(final_target_x, final_target_y, self.goal_z, move_yaw)
         #phase-7 : Landing
         if self.phase == "LANDING":
             self.set_mode("AUTO.LAND")
