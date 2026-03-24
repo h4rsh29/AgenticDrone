@@ -5,7 +5,8 @@ from models import logic_llm, vlm_model, processor
 from state import AgentState
 from prompts import MISSIONS
 from tools import execute_action
-
+import json
+from prompts import MISSIONS, ORCHESTRATOR_SYSTEM
 # NODE: Visual Perception (SmolVLM)
 def perception_node(state: AgentState):
     mission = MISSIONS[state["mission_key"]]
@@ -28,18 +29,17 @@ def cognition_node(state: AgentState):
     mission = MISSIONS[state["mission_key"]]
     
     # We use "high reasoning" effort for mission-critical tasks
-    system_msg = mission["system"] + "\nOutput ONLY the action word: STOP, PATH_SAFE, LEFT, or RIGHT."
-    input_text = f"VLM Analysis: {state['visual_analysis']}\nRule: {mission['user']}"
+    system_msg = mission["system"] + "\nOutput format: CODE | DESCRIPTION"
     
     response = logic_llm.invoke([
         {"role": "system", "content": system_msg},
-        {"role": "user", "content": input_text}
+        {"role": "user", "content": f"VLM Analysis: {state['visual_analysis']}"}
     ])
+    parts = response.content.split("|")
+    decision = parts[0].strip().upper()
+    description = parts[1].strip() if len(parts) > 1 else "Target analyzed."
     
-    decision = response.content.strip().upper()
-    execute_action(decision) # Physical action triggered here
-    
-    return {"final_decision": decision}
+    return {"final_decision": decision, "visual_analysis": description}
 
 # ... (Keep your existing imports and Node functions as they are)
 
@@ -60,6 +60,23 @@ class DroneAgent:
         self.current_mission = default_mission
         self.target_object = None # For 'nav' missions
 
+    def understand_command(self, user_text):
+        """Turns your text into a drone mission plan"""
+        response = logic_llm.invoke([
+            {"role": "system", "content": ORCHESTRATOR_SYSTEM},
+            {"role": "user", "content": user_text}
+        ])    
+        # Robust JSON parsing
+        content = response.content.strip()
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+    
+        data = json.loads(content)
+    
+        # FIX: If the AI returns a list, take the first dictionary
+        if isinstance(data, list):
+            return data[0]
+        return data
     def get_decision(self, image_path: str, lidar_dist: float, target="person"):
         self.target_object = target
         """
@@ -71,6 +88,7 @@ class DroneAgent:
         if lidar_dist < 3.0:
             active_mission = "avoidance"
 
+
         # 2. Prepare the Input State
         initial_state = {
             "mission_key": active_mission,
@@ -79,7 +97,4 @@ class DroneAgent:
             "history": [] 
         }
 
-        # 3. Run the LangGraph Workflow
-        result = compiled_workflow.invoke(initial_state)
-        
-        return result["final_decision"]
+        return compiled_workflow.invoke(initial_state)
