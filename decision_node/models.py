@@ -4,8 +4,15 @@ from dotenv import load_dotenv
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from transformers import AutoProcessor, AutoModelForImageTextToText, BitsAndBytesConfig
 import torch
+from ultralytics import YOLO
 
 load_dotenv()
+
+# --- DETECTION: YOLO26 Nano ---
+# Optimized for real-time surveillance with deterministic latency
+print("Loading YOLO26n...")
+yolo_model = YOLO('yolo26n.pt') 
+print("YOLO26 loaded successfully!")
 
 # --- COGNITION: GPT-OSS 120B (via OpenRouter) ---
 # Optimized for 2026 agentic reasoning
