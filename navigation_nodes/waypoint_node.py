@@ -60,16 +60,21 @@ class WaypointNode(Node):
         self.search_pattern = []
         self.current_mission = "nav"
 
-        # Coordinates for a 10m x 20m box around the bridge center (0, -30)
+        self.bridge_y = -35.0
+        self.bridge_z = 4.0
+        
+        # Waypoints now fly ALONG the 20m bridge (X-axis)
+        # We stay 7 meters away (Y = -28.0) for a clear view
         self.inspection_waypoints = [
-            (10.0, -20.0, 4.0),  # Point A: Front Right
-            (10.0, -40.0, 4.0),  # Point B: Back Right
-            (-10.0, -40.0, 4.0), # Point C: Back Left
-            (-10.0, -20.0, 4.0)  # Point D: Front Left
+            (-12.0, -28.0, 4.0), (-9.0, -28.0, 4.0), (-6.0, -28.0, 4.0),
+            (-3.0, -28.0, 4.0), (0.0, -28.0, 4.0), (3.0, -28.0, 4.0),
+            (6.0, -28.0, 4.0), (9.0, -28.0, 4.0), (12.0, -28.0, 4.0)
         ]
+        self.inspection_sequence_finished = False
+        self.return_to_point_idx = 4
         self.waypoint_idx = 0
         self.travel_speed = 1.5      # 1.5 m/s for getting to the target
-        self.inspection_speed = 0.3  # 0.3 m/s for steady, high-quality scanning
+        self.inspection_speed = 0.6  # 0.3 m/s for steady, high-quality scanning
         self.current_max_speed = self.travel_speed
         self.takeoff_complete = False
 
@@ -337,49 +342,68 @@ class WaypointNode(Node):
             return
         # --- PHASE-6: NAVIGATION (Consolidated Logic) ---
         if self.phase == "NAVIGATE":
-            # 1. SET SPEED MODE
-            if self.current_mission == "inspection":
-                self.current_max_speed = self.inspection_speed
-            else:
-                self.current_max_speed = self.travel_speed
             dist_to_goal = math.sqrt((self.goal_x - self.current_x)**2 + (self.goal_y - self.current_y)**2)
 
-            if not self.takeoff_complete:
-                if dist_to_goal > 2.5: self.takeoff_complete = True
-                self.publish_setpoint(self.current_x, self.current_y, self.goal_z)
-                return
             # 2. ARRIVAL HANDSHAKE: Signal Brain when 3.0m from bridge
             # This fixes the "Landing instead of Inspection" issue
-            if self.mission_active and dist_to_goal < 3.0 and self.current_mission == "nav":
+            if self.mission_active and dist_to_goal < 5.0 and self.current_mission == "nav":
                 self.get_logger().info("Visual range reached. Signaling Brain.")
                 self.status_pub.publish(String(data="ARRIVED_AT_TARGET"))
                 self.mission_active = False # Hover and wait for Brain to switch missions
                 self.publish_setpoint(self.current_x, self.current_y, self.goal_z)
                 return   
             # 2. GUIDED INSPECTION PATH
+            # Replace your current "if self.current_mission == 'inspection':" block
             if self.current_mission == "inspection":
-                # Get current target point from our list
-                tx, ty, tz = self.inspection_waypoints[self.waypoint_idx]
-                
-                dist_to_wp = math.sqrt((tx - self.current_x)**2 + (ty - self.current_y)**2)
-                
-                # If reached current waypoint, move to next one
-                if dist_to_wp < 1.5:
-                    self.waypoint_idx = (self.waypoint_idx + 1) % len(self.inspection_waypoints)
-                    self.get_logger().info(f"Waypoint Reached. Moving to Point {self.waypoint_idx}")
+                # 1. Choose target based on sequence progress
+                if not self.inspection_sequence_finished:
+                    tx, ty, tz = self.inspection_waypoints[self.waypoint_idx]
+                else:
+                    # AFTER Point 10: Head back to Point 5
+                    tx, ty, tz = self.inspection_waypoints[self.return_to_point_idx]
 
-                # CALCULATE YAW: Always face the bridge center (0, -30)
-                look_yaw = math.atan2(-30.0 - self.current_y, 0.0 - self.current_x)
-                
-                # Move SLOWLY between waypoints (0.5m/s)
-                self.publish_setpoint(tx, ty, tz, look_yaw)
-                return 
+                # 2. Calculate Distance
+                dx, dy, dz = tx - self.current_x, ty - self.current_y, tz - self.current_z
+                dist_to_wp = math.sqrt(dx**2 + dy**2 + dz**2)
+                # PHASE-AWARE SPEED:
+                # Use travel_speed (1.5m/s) to get to Point 1.
+                # Only use inspection_speed (0.3m/s) DURING the scan.
+                if self.waypoint_idx == 0 and not self.inspection_sequence_finished:
+                    active_speed = self.travel_speed 
+                else:
+                    active_speed = self.inspection_speed
 
-            # 3. MISSION: LAND
-            if self.current_mission == "land" and dist_to_goal < 1.5:
-                self.get_logger().info("Mission Complete. Landing.")
-                self.phase = "LANDING"
+                # 3. Handle Sequence Transitions
+                if dist_to_wp < 0.8:
+                    if not self.inspection_sequence_finished:
+                        if self.waypoint_idx < len(self.inspection_waypoints) - 1:
+                            self.waypoint_idx += 1
+                            self.get_logger().info(f"Point {self.waypoint_idx} Cleared.")
+                        else:
+                            # Reached Point 10!
+                            self.inspection_sequence_finished = True
+                            self.get_logger().info("Scan complete. Returning to Point 5.")
+                    else:
+                        # Reached Point 5 on the way back!
+                        self.get_logger().info("Back at Point 5. Returning to Hangar for Landing.")
+                        self.phase = "LANDING"
+                        return
+
+                # --- CAMERA HEADING: Point directly at the bridge center line ---
+                look_yaw = math.atan2(self.bridge_y - self.current_y, 0.0 - self.current_x)
+
+                # 5. Smooth Movement (0.3 m/s)
+                max_step = self.inspection_speed * 0.1
+                if dist_to_wp > max_step:
+                    step_x = self.current_x + (dx/dist_to_wp)*max_step
+                    step_y = self.current_y + (dy/dist_to_wp)*max_step
+                    step_z = self.current_z + (dz/dist_to_wp)*max_step
+                else:
+                    step_x, step_y, step_z = tx, ty, tz
+
+                self.publish_setpoint(step_x, step_y, step_z, look_yaw)
                 return
+
 
             if self.current_mission == "surveillance":
                 if not self.search_pattern:
