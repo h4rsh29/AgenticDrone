@@ -61,20 +61,22 @@ class WaypointNode(Node):
         self.current_mission = "nav"
 
         self.bridge_y = -35.0
-        self.bridge_z = 4.0
+        self.bridge_z = 5.0
         
         # Waypoints now fly ALONG the 20m bridge (X-axis)
-        # We stay 7 meters away (Y = -28.0) for a clear view
-        self.inspection_waypoints = [
-            (-12.0, -28.0, 4.0), (-9.0, -28.0, 4.0), (-6.0, -28.0, 4.0),
-            (-3.0, -28.0, 4.0), (0.0, -28.0, 4.0), (3.0, -28.0, 4.0),
-            (6.0, -28.0, 4.0), (9.0, -28.0, 4.0), (12.0, -28.0, 4.0)
-        ]
+        # Side A (North)
+        side_a = [(-12.0, -28.0, 5.0), (-6.0, -28.0, 5.0), (0.0, -28.0, 5.0), (6.0, -28.0, 5.0), (12.0, -28.0, 5.0)]
+        # Transition around the edge
+        transition = [(12.0, -42.0, 5.0)]
+        # Side B (South)
+        side_b = [(12.0, -42.0, 5.0), (6.0, -42.0, 5.0), (0.0, -42.0, 5.0), (-6.0, -42.0, 5.0), (-12.0, -42.0, 5.0)]
+
+        self.inspection_waypoints = side_a + transition + side_b
+        self.return_to_point_idx = 2 # Index 2 is the bridge center (0, -30)
         self.inspection_sequence_finished = False
-        self.return_to_point_idx = 4
         self.waypoint_idx = 0
         self.travel_speed = 1.5      # 1.5 m/s for getting to the target
-        self.inspection_speed = 0.6  # 0.3 m/s for steady, high-quality scanning
+        self.inspection_speed = 0.4  # 0.3 m/s for steady, high-quality scanning
         self.current_max_speed = self.travel_speed
         self.takeoff_complete = False
 
@@ -390,10 +392,10 @@ class WaypointNode(Node):
                         return
 
                 # --- CAMERA HEADING: Point directly at the bridge center line ---
-                look_yaw = math.atan2(self.bridge_y - self.current_y, 0.0 - self.current_x)
+                look_yaw = math.atan2(self.bridge_y - self.current_y, 0.0)
 
                 # 5. Smooth Movement (0.3 m/s)
-                max_step = self.inspection_speed * 0.1
+                max_step = self.inspection_speed * 0.2
                 if dist_to_wp > max_step:
                     step_x = self.current_x + (dx/dist_to_wp)*max_step
                     step_y = self.current_y + (dy/dist_to_wp)*max_step
