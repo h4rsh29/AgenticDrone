@@ -30,6 +30,7 @@ class VLANode(Node):
         self.stop_counter = 0
         self.current_x = 0.0
         self.current_y = 0.0
+        self.intended_final_mission = "land"
         self.latest_ai_results = None # To store boxes between AI thoughts
         cv2.namedWindow("Drone AI - Live Surveillance", cv2.WINDOW_NORMAL)
         cv2.startWindowThread()
@@ -54,6 +55,7 @@ class VLANode(Node):
         self.create_subscription(String, '/drone/user_command', self.command_cb, 10)
         self.pub = self.create_publisher(String, '/drone/vla_decision', 10)
         self.goal_pub = self.create_publisher(Point, '/drone/new_goal', 10)
+        self.create_subscription(String, '/drone/pilot_status', self.pilot_status_cb, 10)
         self.desc_pub = self.create_publisher(String, '/drone/vla_description', 10)
         self.mission_type_pub = self.create_publisher(String, '/drone/active_mission', 10)
         self.create_subscription(PoseStamped, '/mavros/local_position/pose', self.pose_cb, qos_profile)
@@ -62,43 +64,46 @@ class VLANode(Node):
         self.gz_node.subscribe(GzImage, "/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image", self.gz_img_cb)
         self.get_logger().info("BRAIN: Online and listening for text commands...")
 
-    # node.py -> improved command_cb
+    # node.py - Corrected Handshake Logic
+        self.intended_final_mission = "land" # Default to landing
+
     def command_cb(self, msg):
         try:
-            # 1. Ask the AI to understand the command
             plan = self.agent.understand_command(msg.data)
-
-            # 1. RESET LOG: Wipe the file ONLY when a new mission starts
-            with open("surveillance_log.txt", "w") as f:
-                f.write(f"--- NEW SESSION: {plan['mission'].upper()} STARTED ---\n")
             
-            # 2. Update the Agent's mission state
-            self.agent.current_mission = plan['mission'] 
+            # Store what we want to do AFTER arriving
+            self.intended_final_mission = plan['mission'] 
             
-            # 3. Broadcast the mission to the Pilot
-            mission_msg = String(data=plan['mission'])
-            self.mission_type_pub.publish(mission_msg)
+            # Reset logs
+            for log in ["surveillance_log.txt", "inspection_report.txt"]:
+                with open(log, "w") as f: f.write(f"--- SESSION: {plan['mission'].upper()} ---\n")
 
-            # 4. ROBUST KEY CHECKING: Use .get() to avoid 'x' or 'target' errors
-            target_name = plan.get('target', 'area')
-            # If AI forgets x/y/z, use current position so the drone doesn't move unexpectedly
-            gx = float(plan.get('x', self.current_x))
-            gy = float(plan.get('y', self.current_y))
-            gz = float(plan.get('z', 3.0)) # Default to 3m altitude
-
-            self.set_parameters([rclpy.parameter.Parameter(
-                'target_object', rclpy.Parameter.Type.STRING, target_name
-            )])
-
-            # 5. Send the goal to the Pilot
-            goal = Point(x=gx, y=gy, z=gz)
-            self.goal_pub.publish(goal)
+            # Command: Navigate to coordinates first
+            gx, gy = float(plan.get('x', 0.0)), float(plan.get('y', 0.0))
+            self.goal_pub.publish(Point(x=gx, y=gy, z=3.5))
             
-            self.get_logger().info(f"MISSION STARTED: {plan['mission']} at {gx},{gy}")
-            
+            # SET MISSION TO 'NAV' (This tells the pilot: "Just fly there, don't orbit yet")
+            self.mission_type_pub.publish(String(data="nav"))
+            self.get_logger().info(f"PILOT TASKED: Navigate to ({gx}, {gy}) for {self.intended_final_mission}")
         except Exception as e:
-            # This captures the 'x' error you saw
-            self.get_logger().error(f"Orchestration Error: {e}")
+            self.get_logger().error(f"Cmd Error: {e}")
+
+    def pilot_status_cb(self, msg):
+        """THE HANDSHAKE: Transition only when pilot reports arrival"""
+        if msg.data == "ARRIVED_AT_TARGET":
+            # Determine the final command
+            final_task = self.intended_final_mission
+            
+            # CRITICAL FIX: If user only said 'nav', then 'nav' at destination means 'land'
+            if final_task == "nav":
+                final_task = "land"
+                self.get_logger().info("Navigation complete. Commanding Pilot to LAND.")
+            else:
+                self.get_logger().info(f"Arrival confirmed. Starting {final_task} phase.")
+            
+            # Send the final mission type to the Pilot
+            self.agent.current_mission = final_task
+            self.mission_type_pub.publish(String(data=final_task))
 
     def gz_img_cb(self, msg):
         img_map = np.frombuffer(msg.data, dtype=np.uint8)
@@ -106,9 +111,11 @@ class VLANode(Node):
         self.latest_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         results = self.ui_yolo(self.latest_frame, conf=0.25, verbose=False)[0]
         self.annotated_ui_frame = results.plot()
+
     def pose_cb(self, msg):
         self.current_x = msg.pose.position.x
         self.current_y = msg.pose.position.y
+
     def brain_loop(self):
         """Runs in the background so the main window doesn't freeze"""
         while rclpy.ok():
@@ -135,8 +142,12 @@ class VLANode(Node):
             self.latest_ai_results = ai_output
             self.desc_pub.publish(String(data=ai_output["visual_analysis"]))
             decision = ai_output["final_decision"]
+            actual_decision = "PATH_SAFE" 
+
+            if self.agent.current_mission == "inspection":
+                self.generate_inspection_report(ai_output)
             # --- NEW: PASSIVE SURVEILLANCE LOGGING WITH IMAGES ---
-            if "OBJECT_REPORT" in decision or self.agent.current_mission == "surveillance":
+            elif "OBJECT_REPORT" in decision or self.agent.current_mission == "surveillance":
                 timestamp = self.get_clock().now().to_msg().sec
                 img_name = f"detection_{timestamp}.jpg"
                 save_dir = os.path.expanduser("~/AgenticDrone/detections/")
@@ -156,6 +167,7 @@ class VLANode(Node):
                 
                 self.get_logger().info(f"📸 DATA CAPTURED: {img_name} at ({self.current_x:.1f}, {self.current_y:.1f})")
                 actual_decision = "PATH_SAFE"
+
             elif "STEER" in decision:
                 actual_decision = decision
                 self.stop_counter = 0
@@ -169,7 +181,21 @@ class VLANode(Node):
             self.get_logger().error(f"Thinking Failed: {e}")
         finally:
             torch.cuda.empty_cache()
-            
+    def generate_inspection_report(self, ai_output):
+        """Creates a professional inspection log with clear formatting"""
+        timestamp = self.get_clock().now().to_msg().sec
+        report_file = "inspection_report.txt"
+        
+        # Determine Status Severity
+        status = "CRITICAL" if "FAULT" in ai_output["final_decision"] else "HEALTHY"
+        
+        with open(report_file, "a") as f:
+            f.write(f"\n{'='*40}\n")
+            f.write(f"INSPECTION RECORD: {timestamp}\n")
+            f.write(f"LOCATION: {self.current_x:.1f}, {self.current_y:.1f}\n")
+            f.write(f"STRUCTURE STATUS: {status}\n")
+            f.write(f"ANALYSIS: {ai_output['visual_analysis']}\n")
+            f.write(f"{'='*40}\n")        
 
 def main(args=None):
     rclpy.init(args=args)
