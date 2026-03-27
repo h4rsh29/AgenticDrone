@@ -41,7 +41,11 @@ class WaypointNode(Node):
         self.is_armed = False
         self.current_state = State()
         self.setpoint_counter = 0
-        
+        self.takeoff_complete = False
+        # 3D Grid for Bridge Safety
+        self.voxel_grid = np.zeros((100, 100, 20)) 
+        self.v_res = 1.0 # 1-meter resolution
+        self.v_offset = (50, 50, 0) # Center the grid
         self.min_distance = 10.0
         self.critical_dist = 10.0
         self.left_dist = 10.0
@@ -50,14 +54,29 @@ class WaypointNode(Node):
         self.stop_distance_threshold = 3.0
         self.hover_pos = None
         self.stop_cooldown = 0
+        self.current_inspection_radius = 7.0 # Start a bit further back
+        self.target_inspection_dist = 5.0    # Maintain exactly 5m from surface
 
         self.search_pattern = []
-        self.search_idx = 0
         self.current_mission = "nav"
+
+        # Coordinates for a 10m x 20m box around the bridge center (0, -30)
+        self.inspection_waypoints = [
+            (10.0, -20.0, 4.0),  # Point A: Front Right
+            (10.0, -40.0, 4.0),  # Point B: Back Right
+            (-10.0, -40.0, 4.0), # Point C: Back Left
+            (-10.0, -20.0, 4.0)  # Point D: Front Left
+        ]
+        self.waypoint_idx = 0
+        self.travel_speed = 1.5      # 1.5 m/s for getting to the target
+        self.inspection_speed = 0.3  # 0.3 m/s for steady, high-quality scanning
+        self.current_max_speed = self.travel_speed
+        self.takeoff_complete = False
 
         self.cmd_pub = self.create_publisher(String, '/drone/user_command', 10)
         self.create_subscription(Point, '/drone/new_goal', self.new_goal_cb, 10)
         self.create_subscription(String, '/drone/vla_decision', self.vla_callback, 10)
+        self.status_pub = self.create_publisher(String, '/drone/pilot_status', 10)
         # 3. ROS Communications
         self.publisher = self.create_publisher(PoseStamped, '/mavros/setpoint_position/local', 10)
         self.arm_client = self.create_client(CommandBool, '/mavros/cmd/arming')
@@ -180,6 +199,16 @@ class WaypointNode(Node):
             if 0 <= gx < 100 and 0 <= gy < 100:
                 self.occupancy_grid[gx][gy] = 1.0
             
+            if 0 <= gx < 100 and 0 <= gy < 100:
+                self.occupancy_grid[gx][gy] = 1.0
+                # Mark 3D Voxel if it's part of the bridge
+                if z_l > 0.5: # Obstacles above the drone
+                    # CORRECTED: Use World Z (Drone Alt + LiDAR local Z)
+                    world_obs_z = self.current_z + z_l 
+                    vz = int(world_obs_z / self.v_res)
+                    if 0 <= vz < 20:
+                        self.voxel_grid[gx, gy, vz] = 1
+
             # FRONT: Objects ahead within 1.0m width corridor
             if x_l > 0 and abs(y_l) < 1.0:
                 front_points.append(dist)
@@ -215,10 +244,16 @@ class WaypointNode(Node):
         msg.pose.orientation.w = math.cos(yaw/2)
         self.publisher.publish(msg)
 
-    # waypoint_node.py -> add new method
     def mission_type_cb(self, msg):
         self.current_mission = msg.data.lower()
-        self.get_logger().info(f"PILOT: Mission mode updated to {self.current_mission}")    
+        self.get_logger().info(f"PILOT: Mission mode updated to {self.current_mission}")  
+        # CRITICAL FIX: Reactivate the pilot so it can process the new mission
+        self.mission_active = True 
+        
+        # Reset the orbit index if starting a new inspection
+        if self.current_mission == "inspection":
+            self.search_idx = 0.0
+
         # NEW: Ensure pattern is built when mode switches, even if coordinates arrived first
         if self.current_mission == "surveillance" and self.goal_x is not None:
             self.search_pattern = [
@@ -302,6 +337,50 @@ class WaypointNode(Node):
             return
         # --- PHASE-6: NAVIGATION (Consolidated Logic) ---
         if self.phase == "NAVIGATE":
+            # 1. SET SPEED MODE
+            if self.current_mission == "inspection":
+                self.current_max_speed = self.inspection_speed
+            else:
+                self.current_max_speed = self.travel_speed
+            dist_to_goal = math.sqrt((self.goal_x - self.current_x)**2 + (self.goal_y - self.current_y)**2)
+
+            if not self.takeoff_complete:
+                if dist_to_goal > 2.5: self.takeoff_complete = True
+                self.publish_setpoint(self.current_x, self.current_y, self.goal_z)
+                return
+            # 2. ARRIVAL HANDSHAKE: Signal Brain when 3.0m from bridge
+            # This fixes the "Landing instead of Inspection" issue
+            if self.mission_active and dist_to_goal < 3.0 and self.current_mission == "nav":
+                self.get_logger().info("Visual range reached. Signaling Brain.")
+                self.status_pub.publish(String(data="ARRIVED_AT_TARGET"))
+                self.mission_active = False # Hover and wait for Brain to switch missions
+                self.publish_setpoint(self.current_x, self.current_y, self.goal_z)
+                return   
+            # 2. GUIDED INSPECTION PATH
+            if self.current_mission == "inspection":
+                # Get current target point from our list
+                tx, ty, tz = self.inspection_waypoints[self.waypoint_idx]
+                
+                dist_to_wp = math.sqrt((tx - self.current_x)**2 + (ty - self.current_y)**2)
+                
+                # If reached current waypoint, move to next one
+                if dist_to_wp < 1.5:
+                    self.waypoint_idx = (self.waypoint_idx + 1) % len(self.inspection_waypoints)
+                    self.get_logger().info(f"Waypoint Reached. Moving to Point {self.waypoint_idx}")
+
+                # CALCULATE YAW: Always face the bridge center (0, -30)
+                look_yaw = math.atan2(-30.0 - self.current_y, 0.0 - self.current_x)
+                
+                # Move SLOWLY between waypoints (0.5m/s)
+                self.publish_setpoint(tx, ty, tz, look_yaw)
+                return 
+
+            # 3. MISSION: LAND
+            if self.current_mission == "land" and dist_to_goal < 1.5:
+                self.get_logger().info("Mission Complete. Landing.")
+                self.phase = "LANDING"
+                return
+
             if self.current_mission == "surveillance":
                 if not self.search_pattern:
                     self.get_logger().info("Waiting for surveillance coordinates...")
@@ -321,8 +400,8 @@ class WaypointNode(Node):
                         self.get_logger().info("Surveillance complete. Landing.")
                         self.phase = "LANDING"
                         return
-            # 1. Goal Check
-            dist_to_goal = math.sqrt((self.goal_x - self.current_x)**2 + (self.goal_y - self.current_y)**2)
+                       
+
             if not self.mission_active:
                 self.publish_setpoint(self.current_x, self.current_y, self.goal_z)
                 return
@@ -422,7 +501,13 @@ class WaypointNode(Node):
             # 7. GOAL REACHED CHECK (Land if we are near the final bridge coords)
             #MISSION PROGRESSION CHECK
             if dist_to_goal < 1.2 and self.mission_active:
-                if self.current_mission == "surveillance":
+                if abs(self.current_x) < 1.0 and abs(self.current_y) < 1.0:
+                    return
+                if self.current_mission == "nav":
+                    self.get_logger().info("Destination Reached. Commencing LAND.")
+                    self.phase = "LANDING"
+                    return    
+                elif self.current_mission == "surveillance":
                     # Cycle to the next point in the pattern instead of landing
                     self.search_idx = (self.search_idx + 1) % len(self.search_pattern)
                     self.get_logger().info(f"Switching to search point: {self.search_idx}")
