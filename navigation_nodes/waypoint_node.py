@@ -61,15 +61,15 @@ class WaypointNode(Node):
         self.current_mission = "nav"
 
         self.bridge_y = -35.0
-        self.bridge_z = 5.0
+        self.bridge_z = 4.5
         
         # Waypoints now fly ALONG the 20m bridge (X-axis)
         # Side A (North)
-        side_a = [(-12.0, -28.0, 5.0), (-6.0, -28.0, 5.0), (0.0, -28.0, 5.0), (6.0, -28.0, 5.0), (12.0, -28.0, 5.0)]
+        side_a = [(-12.0, -28.0, 4.5), (-6.0, -28.0, 4.5), (0.0, -28.0, 4.5), (6.0, -28.0, 4.5), (12.0, -28.0, 4.5)]
         # Transition around the edge
-        transition = [(12.0, -42.0, 5.0)]
+        transition = [(12.0, -42.0, 4.5)]
         # Side B (South)
-        side_b = [(12.0, -42.0, 5.0), (6.0, -42.0, 5.0), (0.0, -42.0, 5.0), (-6.0, -42.0, 5.0), (-12.0, -42.0, 5.0)]
+        side_b = [(12.0, -42.0, 4.5), (6.0, -42.0, 4.5), (0.0, -42.0, 4.5), (-6.0, -42.0, 4.5), (-12.0, -42.0, 4.5)]
 
         self.inspection_waypoints = side_a + transition + side_b
         self.return_to_point_idx = 2 # Index 2 is the bridge center (0, -30)
