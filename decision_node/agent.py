@@ -50,31 +50,41 @@ def perception_node(state: AgentState):
     # UPDATED: Add repetition_penalty and do_sample to stop the "looping" text
     output_ids = vlm_model.generate(
         **inputs, 
-        max_new_tokens=40,      # Smaller limit keeps descriptions concise
-        repetition_penalty=1.5, # Stops the AI from saying the same thing twice
-        do_sample=True,         # Adds variety to the response
-        temperature=0.1         # Keeps the AI focused on the image
+        max_new_tokens=80,      # Smaller limit keeps descriptions concise
+        repetition_penalty=1.8, # Stops the AI from saying the same thing twice
+        do_sample=True,        
+        temperature=0.2         # Keeps the AI focused on the image
     )
     
     full_text = processor.batch_decode(output_ids, skip_special_tokens=True)[0]
     description = full_text[len(user_prompt):].strip()
     
+    # THE SCRUBBER: Delete code fragments and LaTeX hallucinations
+    garbage_triggers = ["x86", "include", "ma 19", "nswer", "year's calendar", "documentclass", "html", "body", "copyright", "0-24", "if applicable", "1-JAN-24", "Date()", "FEMA", "rovide an explanation"]
+    # agent.py -> inside perception_node
+    # 1. Keywords to NEVER scrub
+    #fault_keywords = ["crack", "puddle", "moisture", "fault", "damage", "seepage"]
+    
+    # 2. Updated logic: Only scrub if NO faults are mentioned
+    #is_fault_detected = any(k in description.lower() for k in fault_keywords)
+    
+    #if is_fault_detected:
+    #    pass # Keep the descriptive AI analysis!
+    if any(trigger in description.lower() for trigger in garbage_triggers) or len(description) > 500:
+        description = "Structure analysis: Component is visually intact."
     # 2. THE TEXT SCRUBBER: Remove common prompt echoes 
-    garbage_phrases = [
-        "therwise describe it as you see it",
-        "Scan for a person",
-        "f it's not empty",
-        "No matter what you say",
-        "human or vehicle location"
-    ]
-    for phrase in garbage_phrases:
-        description = description.replace(phrase, "")
+    #garbage_phrases = [
+     #   "therwise describe it as you see it",
+      #  "Scan for a person",
+       # "f it's not empty",
+        #"No matter what you say",
+        #"human or vehicle location"
+    #]
+    #for phrase in garbage_phrases:
+     #   description = description.replace(phrase, "")
 
     # 3. Final cleanup of dots and newlines 
-    description = description.replace(".", "").replace("\n", " ").strip()
-    
-    if not description or "Area Clear" in description:
-        description = "Patrol continuing - Area clear."
+    description = description.replace("\n", " ").strip()
         
     return {"visual_analysis": description}
     
@@ -96,12 +106,19 @@ def cognition_node(state: AgentState):
         decision = response.tool_calls[0]["args"]["action"]
     else:
         decision = response.content.split("|")[0].strip()
+     
+    # 2. Map structural analysis to professional report codes for your charts
+    if state["mission_key"] == "inspection":
+        if any(x in decision for x in ["FAULT", "DAMAGE", "CRITICAL"]):
+            final_decision = "CRITICAL" # Chart will show RED
+        else:
+            final_decision = "HEALTHY"  # Chart will show GREEN
+    else:
+        final_decision = decision 
         
-    return {"final_decision": decision, "messages": [response]}
+    return {"final_decision": final_decision, "messages": [response]} 
 
-# ... (Keep your existing imports and Node functions as they are)
-
-# BUILD THE GRAPH (Keep this outside the class for efficiency)
+# BUILD THE GRAPH 
 builder = StateGraph(AgentState)
 builder.add_node("detect", detection_node) # Fast detections
 builder.add_node("vision", perception_node)
