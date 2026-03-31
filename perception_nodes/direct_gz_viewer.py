@@ -6,9 +6,12 @@ from rclpy.node import Node as RosNode
 from std_msgs.msg import Float32 # To send distance to the drone
 from gz.transport13 import Node as GzNode
 from gz.msgs10.image_pb2 import Image
-from gz.msgs10.laserscan_pb2 import LaserScan
+from gz.msgs10.pointcloud_packed_pb2 import PointCloudPacked
+
 from ultralytics import YOLO 
 from std_msgs.msg import Int32
+
+
 
 class DronePerception(RosNode):
     def __init__(self):
@@ -21,8 +24,12 @@ class DronePerception(RosNode):
         self.latest_min_dist = 100.0 
 
         # Subscriptions
-        self.gz_node.subscribe(Image, "/world/baylands/model/x500_depth_0/link/camera_link/sensor/IMX214/image", self.camera_callback)
-        self.gz_node.subscribe(LaserScan, "/world/baylands/model/x500_depth_0/link/lidar_link/sensor/gpu_lidar_3d/scan", self.lidar_callback)
+        self.gz_node.subscribe(Image, "/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image", self.camera_callback)
+        self.gz_node.subscribe(
+            PointCloudPacked,
+            "/world/default/model/x500_depth_0/link/lidar_link/sensor/gpu_lidar_3d/scan/points",
+            self.lidar_callback
+        )
         
         self.current_alt=0.0
         self.alt_pub=self.create_subscription(Float32,'/drone/current_altitude', self.alt_cb, 10)
@@ -32,10 +39,31 @@ class DronePerception(RosNode):
         self.current_alt=msg.data
 
     def lidar_callback(self, msg):
-        # 0.5m filter to ignore drone body
-        valid_ranges = [r for r in msg.ranges if 1.1 < r < 20.0]
-        if valid_ranges:
-            self.latest_min_dist = min(valid_ranges)
+        """Unpacks PointCloudPacked data to calculate distances"""
+        data = msg.data
+        step = msg.point_step
+        distances = []
+
+        # Loop through the binary data and unpack X, Y, Z coordinates
+        for i in range(0, len(data), step):
+            # Unpack three floats (x, y, z)
+            try:
+                x_l, y_l, z_l = struct.unpack_from('fff', data, i)
+                
+                # Filter out points that are too high or too low (ground/noise)
+                if z_l < -0.5 or z_l > 1.0: continue
+                
+                # Calculate Euclidean distance from the drone to the point
+                dist = math.sqrt(x_l**2 + y_l**2)
+                
+                # Apply your existing 1.1m to 20.0m filter
+                if 1.1 < dist < 20.0:
+                    distances.append(dist)
+            except Exception:
+                continue
+
+        if distances:
+            self.latest_min_dist = min(distances)
         else:
             self.latest_min_dist = 100.0
 
@@ -87,13 +115,14 @@ def main():
     rclpy.init()
     perception_node = DronePerception()
     try:
-        # Keep ROS 2 spinning while Gazebo callbacks run in the background
-        while rclpy.ok():
-            rclpy.spin_once(perception_node, timeout_sec=0.01)
+        rclpy.spin(perception_node) # Simpler than the manual while loop
     except KeyboardInterrupt:
         pass
-    perception_node.destroy_node()
-    rclpy.shutdown()
+    finally:
+        # Check if it is still running before shutting down
+        if rclpy.ok():
+            perception_node.destroy_node()
+            rclpy.shutdown()
 
 if __name__ == "__main__":
     main()
