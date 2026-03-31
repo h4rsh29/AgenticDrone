@@ -5,16 +5,22 @@ import logging
 logger = logging.getLogger("DroneTools")
 
 @tool
-def pilot_command(action: str, description: str):
+def execute_flight_path(target_name: str, x: float, y: float, z: float, on_arrival: str):
     """
-    Executes a flight maneuver or mission update.
+    Commands the drone to fly to a specific coordinate.
     Args:
-        action: The command (STOP, STEER_LEFT, STEER_RIGHT, PATH_SAFE, LAND)
-        description: A brief reason for the action for logging.
+        target_name: Name of the destination (e.g. 'bridge', 'takeoff_pad')
+        on_arrival: What to do when reached. Options: 'LAND', 'WAIT_FOR_COMMAND', 'START_INSPECTION'
     """
-    action = action.upper()
-    logger.info(f"🛠️ TOOL EXECUTION: {action} | {description}")
-    return f"Action {action} confirmed: {description}"
+    return f"FLYING_TO_{target_name.upper()}_THEN_{on_arrival.upper()}"
 
+@tool
+def trigger_mission_phase(mission_type: str):
+    """
+    Immediately switches the drone's behavior mode.
+    Args:
+        mission_type: 'inspection', 'surveillance', or 'manual_hover'
+    """
+    return f"SWITCHING_TO_{mission_type.upper()}"
 # List of tools available to the LangGraph
-drone_tools = [pilot_command]
+drone_tools = [execute_flight_path, trigger_mission_phase]
