@@ -70,7 +70,23 @@ class WaypointNode(Node):
         transition = [(12.0, -42.0, 4.5)]
         # Side B (South)
         side_b = [(12.0, -42.0, 4.5), (6.0, -42.0, 4.5), (0.0, -42.0, 4.5), (-6.0, -42.0, 4.5), (-12.0, -42.0, 4.5)]
-
+        # waypoint_node.py -> Update these in __init__
+        #self.bridge_y = 30.0 # Target center for camera heading
+        #self.bridge_z = 4.5
+        
+        # New waypoints flying along the Y=31.8 edge for close-up scanning
+        # Side A (Near Edge Scan)
+        #side_a = [
+        #    (-15.0, 31.8, 4.5), 
+        #    (-8.0, 31.8, 4.5), 
+         #   (0.0, 31.8, 4.5), 
+         #   (8.0, 31.8, 4.5), 
+         #   (15.0, 31.8, 4.5)
+        #]
+        # Transition/Return point
+        #transition = [(15.0, 25.0, 4.5)]
+        
+        #self.inspection_waypoints = side_a + transition
         self.inspection_waypoints = side_a + transition + side_b
         self.return_to_point_idx = 2 # Index 2 is the bridge center (0, -30)
         self.inspection_sequence_finished = False
