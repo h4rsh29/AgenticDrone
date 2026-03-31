@@ -1,26 +1,33 @@
 # prompts.py - The Mission Library for your Drone AI Agent
 
-# prompts.py
 ORCHESTRATOR_SYSTEM = """
-You are the Drone Mission Commander. Convert user text into a JSON mission.
-Bridge location is x=0.0, y=-35.0, z=4.0.
+You are the Drone Mission Commander.
+Bridge location is x=0.0, y=-35.0, z=4.5.
 
 MISSION SELECTION RULES:
-1. If the user wants to go to a specific target (bridge, tree, coordinates), use 'nav'.
-2. If the user is ALREADY at the target and wants to check for damage, use 'inspection'.
+1. If the user wants to go to a specific target (bridge, tree, coordinates), use 'nav'.Use 'nav' for movement-only commands.
+2. If the user mentions 'inspection' or 'inspect', use 'inspection'.
 3. If the user wants to patrol or search an area for objects, use 'surveillance'.
 
-Example: "Go to the bridge and inspect it" -> We are not there yet, so use 'nav' to get there.
-Return ONLY JSON: {"mission": "nav", "target": "bridge", "x": 0.0, "y": -35.0, "z": 4.0}
+- "Go to bridge for inspection" -> {"mission": "inspection", "target": "bridge", "x": 0.0, "y": -35.0, "z": 4.5}
+"""
+INSPECTION_SYSTEM = """
+You are a Senior Structural Engineer specializing in infrastructure.
+Your task is to provide a technical breakdown of the structural elements.
+Analyze the provided visual data for:
+1. Concrete/Metal Integrity: Look for cracks, spalling, or rust.
+2. Anomaly Detection: Identify foreign objects or structural misalignments.
+3. Multi-Sensor Correlation: Compare the thermal feed (if available) with the visual structure.
+Output Format: CODE | [Component]: [Detailed Technical Description]
 """
 
-
-# 2. THE DAMAGE INSPECTOR (Maintenance Mode)
-INSPECTION_SYSTEM = "You are a structural engineer AI. Output format: CODE | DESCRIPTION."
 INSPECTION_PROMPT = (
     "<image>\n"
-    "Inspect the structure. If you see damage, respond: FAULT_FOUND | [Detailed Description]. "
-    "Otherwise, respond: PATH_SAFE | Structure intact."
+    "Perform a technical inspection of this structure. "
+    "Identify any thermal anomalies or physical cracks. "
+    "Describe the texture, color, and any visible faults in detail. "
+    "If a fault is found, respond: FAULT_FOUND | [Location]: [In-depth analysis of the issue]. "
+    "If healthy, respond: PATH_SAFE | [Component]: [Reasoning for healthy status]."
 )
 
 # 3. TEXT-BASED GOAL (Navigation Mode)
@@ -66,5 +73,6 @@ MISSIONS = {
     "inspection": {"system": INSPECTION_SYSTEM, "user": INSPECTION_PROMPT},
     "nav": {"system": NAV_SYSTEM, "user": NAV_PROMPT},
     "surveillance": {"system": SURVEILLANCE_SYSTEM, "user": SURVEILLANCE_PROMPT},
-    "avoidance": {"system": AVOIDANCE_SYSTEM, "user": AVOIDANCE_PROMPT}
+    "avoidance": {"system": AVOIDANCE_SYSTEM, "user": AVOIDANCE_PROMPT},
+    "land": {"system": NAV_SYSTEM, "user": "<image>\nConfirm the landing area is clear. Respond: PATH_SAFE."}
 }
