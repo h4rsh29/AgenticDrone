@@ -30,6 +30,7 @@ class VLANode(Node):
         self.stop_counter = 0
         self.current_x = 0.0
         self.current_y = 0.0
+        self.latest_thermal_frame = None
         self.intended_final_mission = "land"
         self.latest_ai_results = None # To store boxes between AI thoughts
         cv2.namedWindow("Drone AI - Live Surveillance", cv2.WINDOW_NORMAL)
@@ -59,9 +60,11 @@ class VLANode(Node):
         self.desc_pub = self.create_publisher(String, '/drone/vla_description', 10)
         self.mission_type_pub = self.create_publisher(String, '/drone/active_mission', 10)
         self.create_subscription(PoseStamped, '/mavros/local_position/pose', self.pose_cb, qos_profile)
+        
         # Gazebo Transport
         self.gz_node = GzNode()
         self.gz_node.subscribe(GzImage, "/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image", self.gz_img_cb)
+        self.gz_node.subscribe(GzImage, "/drone/thermal_image", self.process_thermal_image)
         self.get_logger().info("BRAIN: Online and listening for text commands...")
 
     # node.py - Corrected Handshake Logic
@@ -78,9 +81,13 @@ class VLANode(Node):
             for log in ["surveillance_log.txt", "inspection_report.txt"]:
                 with open(log, "w") as f: f.write(f"--- SESSION: {plan['mission'].upper()} ---\n")
 
-            # Command: Navigate to coordinates first
-            gx, gy = float(plan.get('x', 0.0)), float(plan.get('y', 0.0))
-            self.goal_pub.publish(Point(x=gx, y=gy, z=3.5))
+            # Pull coordinates from the AI plan, including the 'z' altitude
+            gx = float(plan.get('x', 0.0))
+            gy = float(plan.get('y', 0.0))
+            gz = float(plan.get('z', 3.5)) # Use the AI's 'z' value, or 3.5 if it's missing
+            
+            # Publish the full coordinate to the pilot
+            self.goal_pub.publish(Point(x=gx, y=gy, z=gz))
             
             # SET MISSION TO 'NAV' (This tells the pilot: "Just fly there, don't orbit yet")
             self.mission_type_pub.publish(String(data="nav"))
@@ -124,10 +131,48 @@ class VLANode(Node):
             import time
             time.sleep(0.1) # Small rest to save CPU
 
+    def process_thermal_image(self, msg):
+        try:
+            # 1. Interpret as 16-bit data (2 bytes per pixel) 
+            # Your terminal confirmed 153600 bytes for a 320x240 image
+            raw_data = np.frombuffer(msg.data, dtype=np.uint16).reshape(msg.height, msg.width)
+
+            # 2. DYNAMIC AUTO-SCALING (The "No-Black-Screen" Solution)
+            # This ignores absolute Kelvin and scales the visible contrast 
+            frame_8bit = cv2.normalize(raw_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        
+            # 3. Apply the Magma Colormap for the purple/orange look 
+            self.latest_thermal_frame = cv2.applyColorMap(frame_8bit, cv2.COLORMAP_MAGMA)
+        
+            # Optional: Log the middle pixel value to your terminal to see the real Kelvin
+            #mid_val = raw_data[120, 160]
+            #self.get_logger().info(f"Thermal Data Sample: {mid_val}")
+
+        except Exception as e:
+            self.get_logger().error(f"Thermal Processing Error: {e}")
+
     def draw_live_window(self):
-        if self.annotated_ui_frame is None: return
-        display = cv2.resize(self.annotated_ui_frame, (800, 600))
-        cv2.imshow("Drone AI - Live Surveillance", display)
+        # 1. Always show the RGB Surveillance Window
+        if self.annotated_ui_frame is not None:
+            display = cv2.resize(self.annotated_ui_frame, (800, 600))
+            cv2.imshow("Drone AI - Live Surveillance", display)
+
+        # 2. THE CONDITIONAL TRIGGER: Only show thermal for specific missions
+        # We check the current mission set in the agent 
+        active_thermal_missions = ["inspection", "surveillance"]
+    
+        if self.agent.current_mission in active_thermal_missions:
+            if self.latest_thermal_frame is not None:
+                thermal_display = cv2.resize(self.latest_thermal_frame, (800, 600))
+                cv2.imshow("Drone Thermal - Ironbow View", thermal_display)
+        else:
+            # If we are in 'nav' or 'land', close the window to save CPU/Screen space
+            try:
+                cv2.destroyWindow("Drone Thermal - Ironbow View")
+            except cv2.error:
+                pass # Window was already closed or not yet created
+
+        # 3. Handle OpenCV events
         cv2.waitKey(1)
 
     def think(self):
@@ -136,6 +181,11 @@ class VLANode(Node):
         target = self.get_parameter('target_object').get_parameter_value().string_value
         cv2.imwrite(self.temp_img_path, cv2.resize(self.latest_frame, (720, 720)))
         vis_frame = self.latest_frame.copy()
+        # NEW: Save Thermal Evidence if the window is active
+        thermal_img_path = None
+        if self.latest_thermal_frame is not None:
+            thermal_img_path = os.path.expanduser("~/AgenticDrone/thermal_evidence.jpg")
+            cv2.imwrite(thermal_img_path, self.latest_thermal_frame)    
 
         try:
             ai_output = self.agent.get_decision(self.temp_img_path, self.min_lidar_dist, target=target)
@@ -145,9 +195,11 @@ class VLANode(Node):
             actual_decision = "PATH_SAFE" 
 
             if self.agent.current_mission == "inspection":
-                self.generate_inspection_report(ai_output)
+                self.get_logger().info("generating inspection report...")
+                self.generate_inspection_report(ai_output, thermal_img_path)
             # --- NEW: PASSIVE SURVEILLANCE LOGGING WITH IMAGES ---
             elif "OBJECT_REPORT" in decision or self.agent.current_mission == "surveillance":
+                self.get_logger().info("generating surveillance report...")
                 timestamp = self.get_clock().now().to_msg().sec
                 img_name = f"detection_{timestamp}.jpg"
                 save_dir = os.path.expanduser("~/AgenticDrone/detections/")
@@ -181,21 +233,25 @@ class VLANode(Node):
             self.get_logger().error(f"Thinking Failed: {e}")
         finally:
             torch.cuda.empty_cache()
-    def generate_inspection_report(self, ai_output):
-        """Creates a professional inspection log with clear formatting"""
+    def generate_inspection_report(self, ai_output, thermal_path=None):
+        """Creates a descriptive, multi-sensor inspection log"""
         timestamp = self.get_clock().now().to_msg().sec
         report_file = "inspection_report.txt"
-        
-        # Determine Status Severity
+
         status = "CRITICAL" if "FAULT" in ai_output["final_decision"] else "HEALTHY"
-        
+
         with open(report_file, "a") as f:
-            f.write(f"\n{'='*40}\n")
-            f.write(f"INSPECTION RECORD: {timestamp}\n")
-            f.write(f"LOCATION: {self.current_x:.1f}, {self.current_y:.1f}\n")
-            f.write(f"STRUCTURE STATUS: {status}\n")
-            f.write(f"ANALYSIS: {ai_output['visual_analysis']}\n")
-            f.write(f"{'='*40}\n")        
+            f.write(f"\n{'#'*50}\n")
+            f.write(f"BRIDGE INSPECTION RECORD: {timestamp}\n")
+            f.write(f"COORDINATES: X: {self.current_x:.2f}, Y: {self.current_y:.2f}\n")
+            f.write(f"OVERALL STATUS: {status}\n")
+            f.write(f"VISUAL ANALYSIS: {ai_output['visual_analysis']}\n")
+
+            if thermal_path:
+                f.write(f"THERMAL PROOF: Attached ({os.path.basename(thermal_path)})\n")
+                # Optional: Logic to calculate if moisture is present based on pixel color
+
+            f.write(f"{'#'*50}\n")       
 
 def main(args=None):
     rclpy.init(args=args)
