@@ -10,3 +10,4 @@ class AgentState(TypedDict):
     history: List[str]         # To maintain context over time
     yolo_report: str           # YOLO detection summary
     detection_boxes: List[Dict[str, Any]] 
+    inspection_report: str    
