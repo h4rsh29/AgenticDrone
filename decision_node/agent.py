@@ -9,6 +9,7 @@ from prompts import MISSIONS, ORCHESTRATOR_SYSTEM
 from models import yolo_model
 from langgraph.prebuilt import ToolNode
 from tools import drone_tools
+import re
 
 # Bind tools to the LLM
 llm_with_tools = logic_llm.bind_tools(drone_tools)
@@ -50,42 +51,52 @@ def perception_node(state: AgentState):
     # UPDATED: Add repetition_penalty and do_sample to stop the "looping" text
     output_ids = vlm_model.generate(
         **inputs, 
-        max_new_tokens=80,      # Smaller limit keeps descriptions concise
-        repetition_penalty=1.8, # Stops the AI from saying the same thing twice
-        do_sample=True,        
-        temperature=0.2         # Keeps the AI focused on the image
+        max_new_tokens=40,      # Smaller limit keeps descriptions concise
+        repetition_penalty=1.7, # Stops the AI from saying the same thing twice
+        do_sample=False,        
+        #temperature=0         # Keeps the AI focused on the image
     )
     
     full_text = processor.batch_decode(output_ids, skip_special_tokens=True)[0]
     description = full_text[len(user_prompt):].strip()
-    
-    # THE SCRUBBER: Delete code fragments and LaTeX hallucinations
-    garbage_triggers = ["x86", "include", "ma 19", "nswer", "year's calendar", "documentclass", "html", "body", "copyright", "0-24", "if applicable", "1-JAN-24", "Date()", "FEMA", "rovide an explanation"]
-    # agent.py -> inside perception_node
-    # 1. Keywords to NEVER scrub
-    #fault_keywords = ["crack", "puddle", "moisture", "fault", "damage", "seepage"]
-    
-    # 2. Updated logic: Only scrub if NO faults are mentioned
-    #is_fault_detected = any(k in description.lower() for k in fault_keywords)
-    
-    #if is_fault_detected:
-    #    pass # Keep the descriptive AI analysis!
-    if any(trigger in description.lower() for trigger in garbage_triggers) or len(description) > 500:
-        description = "Structure analysis: Component is visually intact."
-    # 2. THE TEXT SCRUBBER: Remove common prompt echoes 
-    #garbage_phrases = [
-     #   "therwise describe it as you see it",
-      #  "Scan for a person",
-       # "f it's not empty",
-        #"No matter what you say",
-        #"human or vehicle location"
-    #]
-    #for phrase in garbage_phrases:
-     #   description = description.replace(phrase, "")
 
-    # 3. Final cleanup of dots and newlines 
+    # --- DEBUG PRINT: Add this line here ---
+    print(f"\n[RAW VLM OUTPUT]: {description}\n")
+    
+    # 1. NEW ROBUST SCRUBBER: Catch code blocks and weird character patterns
+    garbage_triggers = [
+        "[/path]", "123456789|", "$=>", "hasclass", ".gitignore", "max(min", 
+        "x86", "include", "documentclass", "html", "copyright", "if applicable", "nswer:", "question:", "f you see", "answer with", "otherwise answer",
+        "appropriate label", "label (e g", "[/path]", "$=>", "hasclass", "matter what you say", "yes or no questions", "nswer:", "question:", 
+        "[/path]", "123456789|", "appropriate label", "animated 3d render", "people standing" ,"Answer as if you are an AI", "escribe them", "dentify these",  ". . . .", 
+        "Index Value", "sqft", "ft²", "BLEEPING DOG", "Failures in the System","Surface Condition Index", "infinity is not a number", "0% of surface","escribe them", "dentify these"
+    ]
+    
+    # 2. LOOP DETECTOR: Catch 'ntt ntt ntt' or repeated character patterns
+    if re.search(r'((\. )|(\.)){4,}', description) or re.search(r'(.)\1{4,}', description):
+        description = "Structure analysis: Component is visually intact."
+
+    # 3. BACKGROUND FILTER: Remove mentions of people/cars from the structural report
+    # If the AI starts talking about objects instead of concrete, it's distracted
+    if "people" in description.lower() or "person" in description.lower() or "vehicle" in description.lower():
+        # Keep the text BEFORE it gets distracted, or reset if it's mostly noise
+        description = description.split("The image is")[0].strip()
+        if len(description) < 15:
+            description = "Structure analysis: Component is visually intact."
+    # Calculate character density to catch code-like hallucinations
+    special_chars = sum(1 for c in description if c in "[]{}$_|=<>")
+    char_density = special_chars / len(description) if len(description) > 0 else 0
+
+    fault_keywords = ["crack", "puddle", "moisture", "fault", "damage", "spall", "spalling", "brick", "rust", "pitted", "rough", "broken"]
+    is_fault_detected = any(k in description.lower() for k in fault_keywords)
+    
+    # Robust scrubbing: If it looks like code OR contains a trigger, reset it
+    if any(t in description.lower() for t in garbage_triggers) or char_density > 0.05:
+        description = "Structure analysis: Component is visually intact."
+    elif not is_fault_detected and len(description) > 180:
+        description = "Structure analysis: Component is visually intact."
+
     description = description.replace("\n", " ").strip()
-        
     return {"visual_analysis": description}
     
 
@@ -101,22 +112,26 @@ def cognition_node(state: AgentState):
         {"role": "system", "content": mission["system"]},
         {"role": "user", "content": context}
     ])
-    # Handle both tool calls and raw text (for backward compatibility)
-    if response.tool_calls:
-        decision = response.tool_calls[0]["args"]["action"]
-    else:
-        decision = response.content.split("|")[0].strip()
+    # 2. ROBUST DECISION PARSING
+    raw_content = response.content.split("|")[0].strip()
+    # Fallback: If the LLM returns a full sentence instead of a CODE, force it to 'PATH_SAFE'
+    decision = raw_content if len(raw_content) < 20 else "PATH_SAFE"
      
-    # 2. Map structural analysis to professional report codes for your charts
     if state["mission_key"] == "inspection":
-        if any(x in decision for x in ["FAULT", "DAMAGE", "CRITICAL"]):
+        # Check the actual analysis for keywords, NOT just the GPT decision
+        # This ensures that if VLM says "Jagged spall", it becomes CRITICAL
+        # This bypasses the LLM's tendency to be "polite" or vague.
+        vlm_text = state['visual_analysis'].upper()
+        keywords = ["SPALL", "BRICK", "HOLE", "CRACK", "FAULT", "DAMAGE", "PITTED", "JAGGED", "SURFACE AREA", "FLAW", "DEFECT", "BROKEN"]
+        
+        if any(x in vlm_text for x in keywords):
             final_decision = "CRITICAL" # Chart will show RED
         else:
             final_decision = "HEALTHY"  # Chart will show GREEN
     else:
         final_decision = decision 
         
-    return {"final_decision": final_decision, "messages": [response]} 
+    return {"final_decision": final_decision, "messages": [response]}
 
 # BUILD THE GRAPH 
 builder = StateGraph(AgentState)
