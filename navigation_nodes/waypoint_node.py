@@ -54,12 +54,12 @@ class WaypointNode(Node):
         self.stop_distance_threshold = 3.0
         self.hover_pos = None
         self.stop_cooldown = 0
-        self.current_inspection_radius = 7.0 # Start a bit further back
-        self.target_inspection_dist = 5.0    # Maintain exactly 5m from surface
+        self.current_inspection_radius =4.0 # Start a bit further back
+        self.target_inspection_dist = 4.0    # Maintain exactly 5m from surface
 
         self.search_pattern = []
         self.current_mission = "nav"
-
+        """
         self.bridge_y = -35.0
         self.bridge_z = 4.5
         
@@ -70,27 +70,13 @@ class WaypointNode(Node):
         transition = [(12.0, -42.0, 4.5)]
         # Side B (South)
         side_b = [(12.0, -42.0, 4.5), (6.0, -42.0, 4.5), (0.0, -42.0, 4.5), (-6.0, -42.0, 4.5), (-12.0, -42.0, 4.5)]
-        # waypoint_node.py -> Update these in __init__
-        #self.bridge_y = 30.0 # Target center for camera heading
-        #self.bridge_z = 4.5
-        
-        # New waypoints flying along the Y=31.8 edge for close-up scanning
-        # Side A (Near Edge Scan)
-        #side_a = [
-        #    (-15.0, 31.8, 4.5), 
-        #    (-8.0, 31.8, 4.5), 
-         #   (0.0, 31.8, 4.5), 
-         #   (8.0, 31.8, 4.5), 
-         #   (15.0, 31.8, 4.5)
-        #]
-        # Transition/Return point
-        #transition = [(15.0, 25.0, 4.5)]
-        
-        #self.inspection_waypoints = side_a + transition
-        self.inspection_waypoints = side_a + transition + side_b
-        self.return_to_point_idx = 2 # Index 2 is the bridge center (0, -30)
+        """  
+           
+        #self.inspection_waypoints = side_a + transition + side_b
+        #self.return_to_point_idx = 2 # Index 2 is the bridge center (0, -30)
         self.inspection_sequence_finished = False
         self.waypoint_idx = 0
+        self.return_to_point_idx = 4 # Index 4 corresponds to Point 5 in your sequence
         self.travel_speed = 1.5      # 1.5 m/s for getting to the target
         self.inspection_speed = 0.4  # 0.3 m/s for steady, high-quality scanning
         self.current_max_speed = self.travel_speed
@@ -288,13 +274,55 @@ class WaypointNode(Node):
             self.search_idx = 0
             self.get_logger().info("Search pattern generated from current goal.")
     def new_goal_cb(self, msg):
-        """Automatically updates the pilot's destination"""
-        """This replaces the terminal input with AI coordinates"""
-        self.get_logger().info(f"🎯 NEW MISSION RECEIVED: Moving to {msg.x}, {msg.y}, {msg.z}")
-        self.goal_x = msg.x
-        self.goal_y = msg.y
-        self.goal_z = msg.z
+        self.get_logger().info(f"🎯 TARGET RECEIVED: {msg.x}, {msg.y}, {msg.z}")
+        self.goal_x, self.goal_y, self.goal_z = msg.x, msg.y, msg.z
+        self.bridge_y = msg.y
         self.mission_active = True
+        self.current_path = []
+
+        offset = 4.0 # Distance from the bridge surface for clear viewing
+
+        # User Defined Settings
+        insp_z = 10.0 # Caution: This is inside the truss structure
+        
+        if self.goal_y > 0: # STEEL BRIDGE (Vertical/Y-axis Orientation)
+            self.get_logger().info("Generating CUSTOM Vertical path for Steel Bridge.")
+            
+            # SIDE A: West side at x=-3.0
+            side_a = [
+                (-4.0, 45.0, insp_z), 
+                (-4.0, 50.0, insp_z), 
+                (-4.0, 55.0, insp_z),
+                (-4.0, 60.0, insp_z)
+            ]
+            
+            # TRANSITION: Moving from x=-3 to x=3 at the far end
+            transition = [(4.0, 60.0, insp_z)]
+            
+            # SIDE B: East side at x=3.0
+            side_b = [
+                (4.0, 60.0, insp_z),
+                (4.0, 55.0, insp_z), 
+                (4.0, 50.0, insp_z), 
+                (4.0, 45.0, insp_z), 
+                (4.0, 40.0, insp_z) # Final descent/clearance point
+            ]
+            
+            self.inspection_waypoints = side_a + transition + side_b
+        
+        # --- CASE 2: CONCRETE BRIDGE (Horizontal Orientation / X-axis) ---
+        else:
+            self.get_logger().info("Generating HORIZONTAL inspection path for Concrete Bridge.")
+            side_a_y = self.goal_y + offset
+            side_b_y = self.goal_y - offset
+            # Side A (North)
+            side_a = [(-12.0, -31.0, 4.5), (-6.0, -31.0, 4.5), (0.0, -31.0, 4.5), (6.0, -31.0, 4.5), (12.0, -31.0, 4.5)]
+            # Transition around the edge
+            transition = [(12.0, -39.0, 4.5)]
+            # Side B (South)
+            side_b = [(12.0, -39.0, 4.5), (6.0, -39.0, 4.5), (0.0, -39.0, 4.5), (-6.0, -39.0, 4.5), (-12.0, -39.0, 4.5)]
+            self.inspection_waypoints = side_a + transition + side_b
+        self.waypoint_idx = 0
         self.current_path = []
 
         # If the mission is surveillance, create a search square around the goal
@@ -407,8 +435,13 @@ class WaypointNode(Node):
                         self.phase = "LANDING"
                         return
 
-                # --- CAMERA HEADING: Point directly at the bridge center line ---
-                look_yaw = math.atan2(self.bridge_y - self.current_y, 0.0)
+                # --- DYNAMIC CAMERA HEADING ---
+                if self.goal_y > 0: # Vertical Bridge (Steel)
+                    # Camera looks from x=-3 or x=3 toward the centerline at x=0
+                    look_yaw = math.atan2(0.0, 0.0-self.current_x)
+                else: # Horizontal Bridge (Concrete)
+                    # Point the camera inward from Y-offsets toward the centerline (Y=bridge_y)
+                    look_yaw = math.atan2(self.bridge_y - self.current_y, 0.0)
 
                 # 5. Smooth Movement (0.3 m/s)
                 max_step = self.inspection_speed * 0.2
