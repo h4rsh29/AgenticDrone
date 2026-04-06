@@ -69,6 +69,7 @@ class VLANode(Node):
 
     # node.py - Corrected Handshake Logic
         self.intended_final_mission = "land" # Default to landing
+        self.intended_bridge_y = 0.0 # Initialize the variable
 
     def command_cb(self, msg):
         try:
@@ -84,6 +85,7 @@ class VLANode(Node):
             # Pull coordinates from the AI plan, including the 'z' altitude
             gx = float(plan.get('x', 0.0))
             gy = float(plan.get('y', 0.0))
+            self.intended_bridge_y = gy # Store the bridge center for the report
             gz = float(plan.get('z', 3.5)) # Use the AI's 'z' value, or 3.5 if it's missing
             
             # Publish the full coordinate to the pilot
@@ -113,12 +115,24 @@ class VLANode(Node):
             self.mission_type_pub.publish(String(data=final_task))
 
     def gz_img_cb(self, msg):
-        img_map = np.frombuffer(msg.data, dtype=np.uint8)
-        frame = img_map.reshape((msg.height, msg.width, 3))
-        self.latest_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        results = self.ui_yolo(self.latest_frame, conf=0.25, verbose=False)[0]
-        self.annotated_ui_frame = results.plot()
-
+        #print(f"DEBUG: Frame Received! Resolution: {msg.width}x{msg.height}")
+        try:
+            img_map = np.frombuffer(msg.data, dtype=np.uint8)
+            # Calculate bytes per pixel automatically
+            channels = len(msg.data) // (msg.width * msg.height)
+            frame = img_map.reshape((msg.height, msg.width, channels))
+            
+            # Convert to BGR for OpenCV
+            if channels == 4:
+                self.latest_frame = cv2.cvtColor(frame, cv2.COLOR_RGBA2BGR)
+            else:
+                self.latest_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                
+            # Update YOLO overlay
+            results = self.ui_yolo(self.latest_frame, conf=0.25, verbose=False)[0]
+            self.annotated_ui_frame = results.plot()
+        except Exception as e:
+            self.get_logger().error(f"Image Reshape Error: {e}")
     def pose_cb(self, msg):
         self.current_x = msg.pose.position.x
         self.current_y = msg.pose.position.y
@@ -128,7 +142,6 @@ class VLANode(Node):
         while rclpy.ok():
             if self.latest_frame is not None:
                 self.think() # Call the thinking logic
-            import time
             time.sleep(0.1) # Small rest to save CPU
 
     def process_thermal_image(self, msg):
@@ -194,9 +207,31 @@ class VLANode(Node):
             decision = ai_output["final_decision"]
             actual_decision = "PATH_SAFE" 
 
+            # --- SELECTIVE IMAGE SAVING ---
+            fault_img_path = None
             if self.agent.current_mission == "inspection":
                 self.get_logger().info("generating inspection report...")
-                self.generate_inspection_report(ai_output, thermal_img_path)
+                timestamp = self.get_clock().now().to_msg().sec
+                vis_path = None
+                therm_path = None
+                
+                # --- SELECTIVE IMAGE SAVING (Only for Critical Faults) ---
+                if decision == "CRITICAL":
+                    timestamp = self.get_clock().now().to_msg().sec
+                    fault_dir = os.path.expanduser("~/AgenticDrone/faults/")
+                    if not os.path.exists(fault_dir): os.makedirs(fault_dir)
+                    vis_path = os.path.join(fault_dir, f"fault_{timestamp}_vis.jpg")
+                    therm_path = os.path.join(fault_dir, f"fault_{timestamp}_therm.jpg")
+                    
+                    cv2.imwrite(vis_path, self.latest_frame)
+                    if self.latest_thermal_frame is not None:
+                        cv2.imwrite(therm_path, self.latest_thermal_frame)
+                    
+                    self.get_logger().info(f"🚨 FAULT CAPTURED: {decision} status confirmed.")
+                
+                # --- ALWAYS GENERATE REPORT (For both Healthy and Critical) ---
+                # This is now outside the 'if decision == "CRITICAL"' block
+                self.generate_inspection_report(ai_output, visual_path=vis_path, thermal_path=therm_path)
             # --- NEW: PASSIVE SURVEILLANCE LOGGING WITH IMAGES ---
             elif "OBJECT_REPORT" in decision or self.agent.current_mission == "surveillance":
                 self.get_logger().info("generating surveillance report...")
@@ -233,20 +268,23 @@ class VLANode(Node):
             self.get_logger().error(f"Thinking Failed: {e}")
         finally:
             torch.cuda.empty_cache()
-    def generate_inspection_report(self, ai_output, thermal_path=None):
+    def generate_inspection_report(self, ai_output, visual_path=None, thermal_path=None):
         """Creates a descriptive, multi-sensor inspection log"""
         timestamp = self.get_clock().now().to_msg().sec
         report_file = "inspection_report.txt"
 
-        status = "CRITICAL" if "FAULT" in ai_output["final_decision"] else "HEALTHY"
-
-        with open(report_file, "a") as f:
+        bridge_name = "STEEL_BRIDGE" if self.current_y > 0 else "CONCRETE_BRIDGE"
+    
+        status = ai_output["final_decision"]
+        with open("inspection_report.txt", "a") as f:
             f.write(f"\n{'#'*50}\n")
-            f.write(f"BRIDGE INSPECTION RECORD: {timestamp}\n")
+            f.write(f"LOCATION: {bridge_name} | RECORD: {timestamp}\n")
             f.write(f"COORDINATES: X: {self.current_x:.2f}, Y: {self.current_y:.2f}\n")
             f.write(f"OVERALL STATUS: {status}\n")
             f.write(f"VISUAL ANALYSIS: {ai_output['visual_analysis']}\n")
-
+            f.write(f"{'#'*50}\n")
+            if visual_path:
+                f.write(f"EVIDENCE: {os.path.basename(visual_path)}\n")
             if thermal_path:
                 f.write(f"THERMAL PROOF: Attached ({os.path.basename(thermal_path)})\n")
                 # Optional: Logic to calculate if moisture is present based on pixel color
