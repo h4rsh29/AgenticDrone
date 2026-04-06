@@ -2,14 +2,19 @@
 
 ORCHESTRATOR_SYSTEM = """
 You are the Drone Mission Commander.
-Bridge location is x=0.0, y=-35.0, z=4.5.
+BRIDGE DIRECTORY:
+1. "Concrete Bridge": x=0.0, y=-35.0, z=4.5
+2. "Steel Bridge": x=0.0, y=50.0, z=10.0
 
 MISSION SELECTION RULES:
 1. If the user wants to go to a specific target (bridge, tree, coordinates), use 'nav'.Use 'nav' for movement-only commands.
 2. If the user mentions 'inspection' or 'inspect', use 'inspection'.
-3. If the user wants to patrol or search an area for objects, use 'surveillance'.
+3. If the user mentions "Concrete Bridge", use y=-35.0, z=4.5.
+4. If the user mentions "Steel Bridge", use x=0.0, y=50.0, z=10.0.
+5. If the user wants to patrol or search an area for objects, use 'surveillance'.
 
-- "Go to bridge for inspection" -> {"mission": "inspection", "target": "bridge", "x": 0.0, "y": -35.0, "z": 4.5}
+- "Go to concrete bridge for full inspection" -> {"mission": "inspection", "target": "bridge", "x": 0.0, "y": -35.0, "z": 4.5}
+- "Go to steel bridge for full inspection" -> {"mission": "inspection", "target": "bridge", "x": 0.0, "y": 50.0, "z": 10.0}
 """
 INSPECTION_SYSTEM = """
 You are a Senior Structural Engineer specializing in infrastructure.
@@ -18,16 +23,26 @@ Analyze the provided visual data for:
 1. Concrete/Metal Integrity: Look for cracks, spalling, or rust.
 2. Anomaly Detection: Identify foreign objects or structural misalignments.
 3. Multi-Sensor Correlation: Compare the thermal feed (if available) with the visual structure.
+4. Describe the texture and visible faults in detail. 
 Output Format: CODE | [Component]: [Detailed Technical Description]
 """
 
+#INSPECTION_PROMPT = (
+#    "<image>\n"
+#    "Perform a technical inspection of this structure. "
+#    "Identify any thermal anomalies or physical cracks. "
+#    "Describe the texture, color, and any visible faults in detail. "
+#    "If a fault is found, respond: FAULT_FOUND | [Location]: [In-depth analysis of the issue]. "
+#    "If healthy, respond: PATH_SAFE | [Component]: [Reasoning for healthy status]."
+#)
+
 INSPECTION_PROMPT = (
     "<image>\n"
-    "Perform a technical inspection of this structure. "
-    "Identify any thermal anomalies or physical cracks. "
-    "Describe the texture, color, and any visible faults in detail. "
-    "If a fault is found, respond: FAULT_FOUND | [Location]: [In-depth analysis of the issue]. "
-    "If healthy, respond: PATH_SAFE | [Component]: [Reasoning for healthy status]."
+    "Identify textures on the concrete bridge rail. "
+    "Do you see 'reddish jagged holes' or 'brick patterns'? "
+    "If damage is visible, say: Reddish spall detected. "
+    "If the surface is gray and smooth, say: Component is visually intact. "
+    "Do not use numbers or percentages in your answer."
 )
 
 # 3. TEXT-BASED GOAL (Navigation Mode)
@@ -46,7 +61,12 @@ You are a Surveillance Data Analyst. Your job is to list all objects of interest
 Objects of interest: humans, cars, dustbins, bikes.
 Output Format: OBJECT_REPORT | [Object: Count, Description]
 """
-
+INSPECTION_PROMPT = (
+    "<image>\n"
+    "TECHNICAL REPORT:\n"
+    "Surface Material: Concrete\n"
+    "Visible Faults (spall/brick/hole):"
+)
 SURVEILLANCE_PROMPT = (
     "<image>\n"
     "Identify all humans and vehicles in this image. "
