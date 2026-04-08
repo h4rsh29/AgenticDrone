@@ -1,3 +1,4 @@
+
 import torch
 from PIL import Image
 from langgraph.graph import StateGraph, START, END
@@ -37,6 +38,8 @@ def detection_node(state: AgentState):
 
 
 # NODE: Visual Perception (SmolVLM)
+# agent.py
+
 def perception_node(state: AgentState):
     mission = MISSIONS[state["mission_key"]]
     user_prompt = mission["user"]
@@ -46,92 +49,74 @@ def perception_node(state: AgentState):
 
     image = Image.open(state["image_path"])
     
-    # SmolVLM processing
+    # 1. Process with SmolVLM
     inputs = processor(text=user_prompt, images=image, return_tensors="pt").to("cuda")
-    # UPDATED: Add repetition_penalty and do_sample to stop the "looping" text
     output_ids = vlm_model.generate(
         **inputs, 
-        max_new_tokens=40,      # Smaller limit keeps descriptions concise
-        repetition_penalty=1.7, # Stops the AI from saying the same thing twice
+        max_new_tokens=40,      
+        repetition_penalty=1.5, 
         do_sample=False,        
-        #temperature=0         # Keeps the AI focused on the image
     )
     
     full_text = processor.batch_decode(output_ids, skip_special_tokens=True)[0]
+    # Extract only the completion after the prompt
     description = full_text[len(user_prompt):].strip()
 
-    # --- DEBUG PRINT: Add this line here ---
+    # --- DEBUG PRINT ---
     print(f"\n[RAW VLM OUTPUT]: {description}\n")
     
-    # 1. NEW ROBUST SCRUBBER: Catch code blocks and weird character patterns
-    garbage_triggers = [
-        "[/path]", "123456789|", "$=>", "hasclass", ".gitignore", "max(min", 
-        "x86", "include", "documentclass", "html", "copyright", "if applicable", "nswer:", "question:", "f you see", "answer with", "otherwise answer",
-        "appropriate label", "label (e g", "[/path]", "$=>", "hasclass", "matter what you say", "yes or no questions", "nswer:", "question:", 
-        "[/path]", "123456789|", "appropriate label", "animated 3d render", "people standing" ,"Answer as if you are an AI", "escribe them", "dentify these",  ". . . .", 
-        "Index Value", "sqft", "ft²", "BLEEPING DOG", "Failures in the System","Surface Condition Index", "infinity is not a number", "0% of surface","escribe them", "dentify these"
-    ]
+    # 1. NEW SCRUBBER: Catch 'people' talk and metadata hallucinations
+    people_words = ["person", "man", "woman", "t-shirt", "shirt", "walking", "pedestrian"]
+    garbage_triggers = ["tbody", "304", "10/24", "tx-", "[/path]", "rationale", "if task"]
     
-    # 2. LOOP DETECTOR: Catch 'ntt ntt ntt' or repeated character patterns
-    if re.search(r'((\. )|(\.)){4,}', description) or re.search(r'(.)\1{4,}', description):
-        description = "Structure analysis: Component is visually intact."
-
-    # 3. BACKGROUND FILTER: Remove mentions of people/cars from the structural report
-    # If the AI starts talking about objects instead of concrete, it's distracted
-    if "people" in description.lower() or "person" in description.lower() or "vehicle" in description.lower():
-        # Keep the text BEFORE it gets distracted, or reset if it's mostly noise
-        description = description.split("The image is")[0].strip()
-        if len(description) < 15:
-            description = "Structure analysis: Component is visually intact."
-    # Calculate character density to catch code-like hallucinations
-    special_chars = sum(1 for c in description if c in "[]{}$_|=<>")
-    char_density = special_chars / len(description) if len(description) > 0 else 0
-
-    fault_keywords = ["crack", "puddle", "moisture", "fault", "damage", "spall", "spalling", "brick", "rust", "pitted", "rough", "broken"]
-    is_fault_detected = any(k in description.lower() for k in fault_keywords)
+    # 2. If the VLM only talks about people, force a neutral surface report
+    if any(p in description.lower() for p in people_words) and len(description) < 60:
+        description = "Surface is currently obstructed by personnel; proceeding with base scan."
     
-    # Robust scrubbing: If it looks like code OR contains a trigger, reset it
-    if any(t in description.lower() for t in garbage_triggers) or char_density > 0.05:
-        description = "Structure analysis: Component is visually intact."
-    elif not is_fault_detected and len(description) > 180:
-        description = "Structure analysis: Component is visually intact."
+    # 3. Standard garbage reset
+    if any(t in description.lower() for t in garbage_triggers) or len(description) < 3:
+        description = "Surface appears uniform and intact."
 
-    description = description.replace("\n", " ").strip()
-    return {"visual_analysis": description}
+    return {"visual_analysis": description.replace("\n", " ").strip()}
     
-
-
-
 # NODE: Reasoning & Decision (GPT-OSS 120B)
 def cognition_node(state: AgentState):
     mission = MISSIONS[state["mission_key"]]
     
-    context = f"YOLO: {state['yolo_report']} | VLM: {state['visual_analysis']}"
+    # Context for the Senior Engineer (LLM)
+    context = f"YOLO: {state['yolo_report']} | VLM_RAW: {state['visual_analysis']}"
     
     response = llm_with_tools.invoke([
         {"role": "system", "content": mission["system"]},
-        {"role": "user", "content": context}
+        {"role": "user", "content": f"Create a technical report from this data: {context}"}
     ])
-    # 2. ROBUST DECISION PARSING
-    raw_content = response.content.split("|")[0].strip()
-    # Fallback: If the LLM returns a full sentence instead of a CODE, force it to 'PATH_SAFE'
-    decision = raw_content if len(raw_content) < 20 else "PATH_SAFE"
+
+    # 1. Extract the components from the LLM response
+    # Format expected: CODE | Description
+    parts = response.content.split("|")
+    final_code = parts[0].strip()
+    # The LLM now 'fine-tunes' the messy VLM text into the proper report description
+    professional_description = parts[-1].strip()
      
+    # 4. ROBUST STATUS LOGIC
+    vlm_raw = state['visual_analysis'].lower()
+    # Manual override: If the VLM actually mentions damage keywords, force CRITICAL
+    defect_keywords = ["reddish", "jagged", "pitted", "crack", "stain", "rust", "spall", "hole", "brick","rough"]
+    vlm_saw_defect = any(k in vlm_raw for k in defect_keywords)
+
     if state["mission_key"] == "inspection":
-        # Check the actual analysis for keywords, NOT just the GPT decision
-        # This ensures that if VLM says "Jagged spall", it becomes CRITICAL
-        # This bypasses the LLM's tendency to be "polite" or vague.
-        vlm_text = state['visual_analysis'].upper()
-        keywords = ["SPALL", "BRICK", "HOLE", "CRACK", "FAULT", "DAMAGE", "PITTED", "JAGGED", "SURFACE AREA", "FLAW", "DEFECT", "BROKEN"]
-        
-        if any(x in vlm_text for x in keywords):
-            final_decision = "CRITICAL" # Chart will show RED
+        if vlm_saw_defect or "CRITICAL" in final_code.upper():
+            status = "CRITICAL"
         else:
-            final_decision = "HEALTHY"  # Chart will show GREEN
+            status = "HEALTHY"
     else:
-        final_decision = decision 
-        
-    return {"final_decision": final_decision, "messages": [response]}
+        status = final_code if len(final_code) < 20 else "PATH_SAFE"
+
+    return {
+        "final_decision": status, 
+        "visual_analysis": professional_description, 
+        "messages": [response]
+    }
 
 # BUILD THE GRAPH 
 builder = StateGraph(AgentState)
