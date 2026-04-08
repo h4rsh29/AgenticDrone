@@ -91,32 +91,34 @@ def cognition_node(state: AgentState):
         {"role": "user", "content": f"Create a technical report from this data: {context}"}
     ])
 
-    # 1. Extract the components from the LLM response
-    # Format expected: CODE | Description
-    parts = response.content.split("|")
-    final_code = parts[0].strip()
-    # The LLM now 'fine-tunes' the messy VLM text into the proper report description
-    professional_description = parts[-1].strip()
-     
-    # 4. ROBUST STATUS LOGIC
-    vlm_raw = state['visual_analysis'].lower()
-    # Manual override: If the VLM actually mentions damage keywords, force CRITICAL
-    defect_keywords = ["reddish", "jagged", "pitted", "crack", "stain", "rust", "spall", "hole", "brick","rough"]
-    vlm_saw_defect = any(k in vlm_raw for k in defect_keywords)
-
-    if state["mission_key"] == "inspection":
-        if vlm_saw_defect or "CRITICAL" in final_code.upper():
-            status = "CRITICAL"
-        else:
-            status = "HEALTHY"
+    # 1. Parse the Structured Output
+    content = response.content.upper()
+    
+    # Extract Status
+    if "STATUS: CRITICAL" in content:
+        status = "CRITICAL"
+    elif "STATUS: HEALTHY" in content:
+        status = "HEALTHY"
     else:
-        status = final_code if len(final_code) < 20 else "PATH_SAFE"
+        status = "HEALTHY" # Default safety
+
+    # Extract Reason (Description)
+    if "REASON:" in content:
+        description = response.content.split("REASON:")[-1].strip()
+    else:
+        description = response.content.strip()
+
+    # 2. Logic Override for non-inspection missions
+    if state["mission_key"] != "inspection":
+        status = content.split("|")[0].strip() if "|" in content else "PATH_SAFE"
+        if len(status) > 20: status = "PATH_SAFE"
 
     return {
         "final_decision": status, 
-        "visual_analysis": professional_description, 
+        "visual_analysis": description, 
         "messages": [response]
     }
+    
 
 # BUILD THE GRAPH 
 builder = StateGraph(AgentState)
