@@ -20,18 +20,24 @@ MISSION SELECTION RULES:
 
 INSPECTION_SYSTEM = """
 You are a Senior Structural Engineer. Your task is to extract structural data from drone imagery.
-CRITICAL RULES:
-1. IGNORE people, vehicles, and T-shirt colors. They are irrelevant to the bridge's integrity.
-2. Search the VLM_RAW for keywords: 'reddish', 'jagged', 'pitted', 'lines', or 'stains'.
-3. If these keywords exist, set status to 'CRITICAL' and describe the concrete degradation.
-4. Set 'HEALTHY' only if the surface is described as smooth, uniform, or clean.
-Output Format: [STATUS_CODE] | [Professional Technical Description]
+
+STRICT RULES:
+1. If the data mentions cracks, spalling, reddish rust, or jagged holes -> Status: CRITICAL
+2. If the data says smooth, uniform, healthy, or no damage -> Status: HEALTHY
+3. DO NOT contradict yourself. 
+4. Output ONLY the status and a short, fact-based reason.
+
+Format:
+STATUS: <CRITICAL or HEALTHY>
+REASON: <One short technical sentence>
 """
+
 INSPECTION_PROMPT = (
     "<image>\n"
-    "TECHNICAL REPORT:\n"
     "Surface Material: Concrete\n"
-    "Visible Faults (spall/brick/hole):"
+    "Visible Faults (spall/brick/hole/rust/moisture):"
+    "If none seen, say 'Healthy'.\n"
+    "Scan Summary: "
 )
 # 3. TEXT-BASED GOAL (Navigation Mode)
 # Replace [TARGET] with what you are looking for (e.g., "Red Box", "Tall Tree")
