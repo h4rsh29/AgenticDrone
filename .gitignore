@@ -6,5 +6,28 @@ log/
 # Python & AI
 __pycache__/
 *.pyc
-.ollama/
-*.models/
+
+# Hugging Face & Model Weights
+# (SmolVLM-500M-Instruct uses .safetensors and .bin)
+*.bin
+*.safetensors
+*.pth
+*.weights
+*.onnx
+
+# Local Reports & Project Logs
+# These contain your private mission data
+inspection_report.txt
+surveillance_log.txt
+temp_vla_frame.jpg
+thermal_evidence.jpg
+
+# Captured Evidence Folders
+# These can contain hundreds of bridge images
+faults/
+detections/
+
+# IDE & Local Settings
+.vscode/
+.env
+.cache/
