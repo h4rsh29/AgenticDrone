@@ -1,0 +1,808 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version="1.9">
+  <world name="default">
+    <physics type="ode">
+      <max_step_size>0.01</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>100</real_time_update_rate>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-magnetometer-system" name="gz::sim::systems::Magnetometer"/>
+    <plugin filename="gz-sim-air-pressure-system" name="gz::sim::systems::AirPressure"/>
+    <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
+    <plugin filename="gz-sim-thermal-system" name="gz::sim::systems::Thermal">
+      <!-- Optional: Set a default global ambient temperature in Kelvin -->
+      <temperature>300.0</temperature> 
+    </plugin>
+
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <!-- ======================== GROUND PLANE ======================== -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <temperature>293.15</temperature>
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>300 300</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>300 300</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1</ambient>
+            <diffuse>0.5 0.5 0.5 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ====================== OBSTACLE PILLAR CLUSTER ====================== -->
+
+    <!-- Pillar 1 -->
+    <model name="pillar_1"><static>true</static><pose>5 1 2 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.4</radius><length>4</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.4</radius><length>4</length></cylinder></geometry>
+      <material><diffuse>0.8 0.2 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- Pillar 2 -->
+    <model name="pillar_2"><static>true</static><pose>7 -2 2 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.4</radius><length>4</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.4</radius><length>4</length></cylinder></geometry>
+      <material><diffuse>0.8 0.2 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- Pillar 3 -->
+    <model name="pillar_3"><static>true</static><pose>3 -4 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.35</radius><length>5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.35</radius><length>5</length></cylinder></geometry>
+      <material><diffuse>0.8 0.2 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- Pillar 4 -->
+    <model name="pillar_4"><static>true</static><pose>9 5 3 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.45</radius><length>6</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.45</radius><length>6</length></cylinder></geometry>
+      <material><diffuse>0.8 0.2 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- Pillar 5 -->
+    <model name="pillar_5"><static>true</static><pose>-5 8 2 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.4</radius><length>4</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.4</radius><length>4</length></cylinder></geometry>
+      <material><diffuse>0.8 0.2 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- ====================== BUILDINGS (Box Obstacles) ====================== -->
+
+    <!-- Building 1 - tall -->
+    <model name="building_1"><static>true</static><pose>15 8 5 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>4 4 10</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>4 4 10</size></box></geometry>
+        <material><diffuse>0.3 0.3 0.7 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- Building 2 - wide -->
+    <model name="building_2"><static>true</static><pose>-10 5 3 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>6 3 6</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>6 3 6</size></box></geometry>
+        <material><diffuse>0.3 0.6 0.3 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- Building 3 - medium -->
+    <model name="building_3"><static>true</static><pose>-15 -8 4 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>5 5 8</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>5 5 8</size></box></geometry>
+        <material><diffuse>0.6 0.4 0.2 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- Building 4 - low flat -->
+    <model name="building_4"><static>true</static><pose>25 -10 2 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>8 6 4</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>8 6 4</size></box></geometry>
+        <material><diffuse>0.5 0.5 0.2 1</diffuse></material></visual>
+      </link></model>
+   
+    <!-- ====================== ARCH / GATE STRUCTURES ====================== -->
+
+  
+   
+
+    <!-- Gate top beam -->
+    <model name="gate_top"><static>true</static><pose>13.5 0 4.75 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>0.5 8 0.5</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.5 8 0.5</size></box></geometry>
+        <material><diffuse>0.2 0.2 0.8 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- ====================== WALL WITH HOLE ====================== -->
+    <model name="wall_with_hole">
+      <static>true</static>
+      <pose>20 0 2 0 0 0</pose>
+      <link name="wall_left">
+        <pose>0 3 0 0 0 0</pose>
+        <collision name="c"><geometry><box><size>0.2 4 4</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.2 4 4</size></box></geometry><material><diffuse>0.5 0.5 0.5 1</diffuse></material></visual>
+      </link>
+      </model>
+      
+    <!-- ====================== FLOATING RINGS / NARROW TUNNELS ====================== -->
+
+    <!-- Floating ring obstacle 1 (sphere shell approximation with 4 boxes) - top bar -->
+    <model name="ring1_top"><static>true</static><pose>35 0 6 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>0.3 5 0.5</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.3 5 0.5</size></box></geometry>
+        <material><diffuse>1 0.5 0 1</diffuse></material></visual>
+      </link></model>
+    <!-- ring1 bottom bar -->
+    <model name="ring1_bot"><static>true</static><pose>35 0 3 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>0.3 5 0.5</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.3 5 0.5</size></box></geometry>
+        <material><diffuse>1 0.5 0 1</diffuse></material></visual>
+      </link></model>
+    <!-- ring1 left post -->
+    <model name="ring1_left"><static>true</static><pose>35 2.25 4.5 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>0.3 0.5 3</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.3 0.5 3</size></box></geometry>
+        <material><diffuse>1 0.5 0 1</diffuse></material></visual>
+      </link></model>
+    <!-- ring1 right post -->
+    <model name="ring1_right"><static>true</static><pose>35 -2.25 4.5 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>0.3 0.5 3</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.3 0.5 3</size></box></geometry>
+        <material><diffuse>1 0.5 0 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- ====================== RANDOM SCATTERED OBSTACLES ====================== -->
+
+    <!-- Box obstacle cluster near start -->
+    <model name="box_obs_1"><static>true</static><pose>-3 3 1 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>1.5 1.5 2</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>1.5 1.5 2</size></box></geometry>
+        <material><diffuse>0.9 0.6 0.1 1</diffuse></material></visual>
+      </link></model>
+
+    <model name="box_obs_2"><static>true</static><pose>-6 -3 1.5 0 0 0.5</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>2 1 3</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>2 1 3</size></box></geometry>
+        <material><diffuse>0.1 0.8 0.8 1</diffuse></material></visual>
+      </link></model>
+
+    
+
+    <model name="box_obs_4"><static>true</static><pose>-20 10 1 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>3 3 2</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>3 3 2</size></box></geometry>
+        <material><diffuse>0.6 0.1 0.6 1</diffuse></material></visual>
+      </link></model>
+
+    <model name="sphere_obs_1"><static>true</static><pose>40 -5 3 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><sphere><radius>2.5</radius></sphere></geometry></collision>
+        <visual name="v"><geometry><sphere><radius>2.5</radius></sphere></geometry>
+        <material><diffuse>0.9 0.1 0.5 1</diffuse></material></visual>
+      </link></model>
+
+    
+
+    <!-- Tall narrow spike -->
+    <model name="spike_1"><static>true</static><pose>-8 -15 5 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><cylinder><radius>0.2</radius><length>10</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.2</radius><length>10</length></cylinder></geometry>
+        <material><diffuse>1 0 0 1</diffuse></material></visual>
+      </link></model>
+
+    <model name="spike_2"><static>true</static><pose>-10 -15 4 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><cylinder><radius>0.2</radius><length>8</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.2</radius><length>8</length></cylinder></geometry>
+        <material><diffuse>1 0 0 1</diffuse></material></visual>
+      </link></model>
+
+    <model name="spike_3"><static>true</static><pose>-12 -15 3.5 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><cylinder><radius>0.2</radius><length>7</length></cylinder></geometry></collision>
+        <visual name="v"><geometry><cylinder><radius>0.2</radius><length>7</length></cylinder></geometry>
+        <material><diffuse>1 0 0 1</diffuse></material></visual>
+      </link></model>
+
+    <!-- ======================== GOAL MARKER ======================== -->
+    <model name="final_goal_marker">
+      <static>true</static>
+      <pose>50 0 2 0 0 0</pose>
+      <link name="l">
+        <visual name="v">
+          <geometry><cylinder><radius>0.6</radius><length>4</length></cylinder></geometry>
+          <material><diffuse>0 1 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================================
+         NO-FLY ZONES  (flat red plates on ground, 0.1m thick)
+         Drone avoidance AI should treat these as restricted areas.
+         Name convention: nofly_zone_N
+    ============================================================ -->
+
+    <!-- No-fly zone 1: Near start area (danger zone) -->
+    <model name="nofly_zone_1">
+      <static>true</static>
+      <pose>8 -8 0.05 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>10 10 0.1</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>10 10 0.1</size></box></geometry>
+          <material>
+            <ambient>0.9 0.0 0.0 0.6</ambient>
+            <diffuse>0.9 0.0 0.0 0.6</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- No-fly zone 2: Mid-field hazard area -->
+    <model name="nofly_zone_2">
+      <static>true</static>
+      <pose>-15 15 0.05 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>12 8 0.1</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>12 8 0.1</size></box></geometry>
+          <material>
+            <ambient>0.9 0.0 0.0 0.6</ambient>
+            <diffuse>0.9 0.0 0.0 0.6</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- No-fly zone 3: Far right restricted runway -->
+    <model name="nofly_zone_3">
+      <static>true</static>
+      <pose>40 10 0.05 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>15 6 0.1</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>15 6 0.1</size></box></geometry>
+          <material>
+            <ambient>0.9 0.0 0.0 0.6</ambient>
+            <diffuse>0.9 0.0 0.0 0.6</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- No-fly zone 4: Behind-building restricted zone -->
+    <model name="nofly_zone_4">
+      <static>true</static>
+      <pose>-20 -15 0.05 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>10 10 0.1</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>10 10 0.1</size></box></geometry>
+          <material>
+            <ambient>0.9 0.0 0.0 0.6</ambient>
+            <diffuse>0.9 0.0 0.0 0.6</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ============================================================
+         EXTRA OBSTACLES BATCH 2 — Added in second pass
+    ============================================================ -->
+
+    <!-- === ZIGZAG WALL MAZE (x=45..55 corridor) === -->
+    <model name="zzwall_1"><static>true</static><pose>45 3 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 10 5</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 10 5</size></box></geometry>
+      <material><diffuse>0.4 0.4 0.9 1</diffuse></material></visual></link></model>
+
+    <model name="zzwall_2"><static>true</static><pose>48 -3 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 10 5</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 10 5</size></box></geometry>
+      <material><diffuse>0.4 0.4 0.9 1</diffuse></material></visual></link></model>
+
+    <model name="zzwall_3"><static>true</static><pose>51 3 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 10 5</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 10 5</size></box></geometry>
+      <material><diffuse>0.4 0.4 0.9 1</diffuse></material></visual></link></model>
+
+    <model name="zzwall_4"><static>true</static><pose>54 -3 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 10 5</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 10 5</size></box></geometry>
+      <material><diffuse>0.4 0.4 0.9 1</diffuse></material></visual></link></model>
+
+    <!-- === ELEVATED PLATFORM with legs === -->
+    <model name="platform_top"><static>true</static><pose>-30 5 5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>8 6 0.4</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>8 6 0.4</size></box></geometry>
+      <material><diffuse>0.5 0.3 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="platform_leg1"><static>true</static><pose>-27 7 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.2</radius><length>5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.2</radius><length>5</length></cylinder></geometry>
+      <material><diffuse>0.4 0.2 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="platform_leg2"><static>true</static><pose>-33 7 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.2</radius><length>5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.2</radius><length>5</length></cylinder></geometry>
+      <material><diffuse>0.4 0.2 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="platform_leg3"><static>true</static><pose>-27 3 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.2</radius><length>5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.2</radius><length>5</length></cylinder></geometry>
+      <material><diffuse>0.4 0.2 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="platform_leg4"><static>true</static><pose>-33 3 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.2</radius><length>5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.2</radius><length>5</length></cylinder></geometry>
+      <material><diffuse>0.4 0.2 0.1 1</diffuse></material></visual></link></model>
+
+   
+    <!-- Tunnel right wall -->
+    <model name="tunnel_right"><static>true</static><pose>-35 -11 3 0 0 1.5708</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 12 6</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 12 6</size></box></geometry>
+      <material><diffuse>0.3 0.3 0.3 1</diffuse></material></visual></link></model>
+   
+
+    <!-- === TREE GROVE (cylinders = trunks, spheres = canopy) === -->
+    <model name="tree_trunk_1"><static>true</static><pose>-2 20 3 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.25</radius><length>6</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.25</radius><length>6</length></cylinder></geometry>
+      <material><diffuse>0.4 0.2 0.0 1</diffuse></material></visual></link></model>
+    <model name="tree_canopy_1"><static>true</static><pose>-2 20 7 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>1.8</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>1.8</radius></sphere></geometry>
+      <material><diffuse>0.1 0.6 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="tree_trunk_2"><static>true</static><pose>2 22 3 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.2</radius><length>6</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.2</radius><length>6</length></cylinder></geometry>
+      <material><diffuse>0.4 0.2 0.0 1</diffuse></material></visual></link></model>
+    <model name="tree_canopy_2"><static>true</static><pose>2 22 7 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>1.5</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>1.5</radius></sphere></geometry>
+      <material><diffuse>0.1 0.6 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="tree_trunk_3"><static>true</static><pose>-5 25 3 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.22</radius><length>6</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.22</radius><length>6</length></cylinder></geometry>
+      <material><diffuse>0.4 0.2 0.0 1</diffuse></material></visual></link></model>
+    <model name="tree_canopy_3"><static>true</static><pose>-5 25 7 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>1.6</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>1.6</radius></sphere></geometry>
+      <material><diffuse>0.1 0.6 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="tree_trunk_4"><static>true</static><pose>5 18 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.3</radius><length>5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.3</radius><length>5</length></cylinder></geometry>
+      <material><diffuse>0.4 0.2 0.0 1</diffuse></material></visual></link></model>
+    <model name="tree_canopy_4"><static>true</static><pose>5 18 6.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>2.0</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>2.0</radius></sphere></geometry>
+      <material><diffuse>0.1 0.6 0.1 1</diffuse></material></visual></link></model>
+
+    <!-- === SUSPENDED BEAMS (aerial obstacles at drone cruising height) === -->
+    <model name="beam_1"><static>true</static><pose>25 0 6 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.4 18 0.4</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.4 18 0.4</size></box></geometry>
+      <material><diffuse>0.9 0.4 0.0 1</diffuse></material></visual></link></model>
+
+    <model name="beam_2"><static>true</static><pose>32 0 4.5 0 0 1.5708</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.4 14 0.4</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.4 14 0.4</size></box></geometry>
+      <material><diffuse>0.9 0.4 0.0 1</diffuse></material></visual></link></model>
+
+    <model name="beam_3"><static>true</static><pose>-18 -5 7 0 0 0.4</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 20 0.3</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 20 0.3</size></box></geometry>
+      <material><diffuse>0.9 0.4 0.0 1</diffuse></material></visual></link></model>
+
+   
+
+    <!-- === DENSE BOX CLUSTER (narrow slalom) === -->
+    <model name="slalom_1"><static>true</static><pose>60 2 1.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>1 1 3</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>1 1 3</size></box></geometry>
+      <material><diffuse>0.7 0.0 0.3 1</diffuse></material></visual></link></model>
+
+    <model name="slalom_2"><static>true</static><pose>62 -2 2 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>1 1 4</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>1 1 4</size></box></geometry>
+      <material><diffuse>0.7 0.0 0.3 1</diffuse></material></visual></link></model>
+
+    <model name="slalom_3"><static>true</static><pose>64 2 1.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>1 1 3</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>1 1 3</size></box></geometry>
+      <material><diffuse>0.7 0.0 0.3 1</diffuse></material></visual></link></model>
+
+    <model name="slalom_4"><static>true</static><pose>66 -2 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>1 1 5</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>1 1 5</size></box></geometry>
+      <material><diffuse>0.7 0.0 0.3 1</diffuse></material></visual></link></model>
+
+    <model name="slalom_5"><static>true</static><pose>68 2 2 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>1 1 4</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>1 1 4</size></box></geometry>
+      <material><diffuse>0.7 0.0 0.3 1</diffuse></material></visual></link></model>
+
+    <!-- === SECOND FLOATING RING (perpendicular) === -->
+    <model name="ring2_top"><static>true</static><pose>43 0 7 0 0 1.5708</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 6 0.5</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 6 0.5</size></box></geometry>
+      <material><diffuse>0.0 0.8 0.8 1</diffuse></material></visual></link></model>
+    <model name="ring2_bot"><static>true</static><pose>43 0 3.5 0 0 1.5708</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 6 0.5</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 6 0.5</size></box></geometry>
+      <material><diffuse>0.0 0.8 0.8 1</diffuse></material></visual></link></model>
+    <model name="ring2_left"><static>true</static><pose>43 2.75 5.25 0 0 1.5708</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 0.5 3.5</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 0.5 3.5</size></box></geometry>
+      <material><diffuse>0.0 0.8 0.8 1</diffuse></material></visual></link></model>
+    <model name="ring2_right"><static>true</static><pose>43 -2.75 5.25 0 0 1.5708</pose>
+      <link name="l"><collision name="c"><geometry><box><size>0.3 0.5 3.5</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>0.3 0.5 3.5</size></box></geometry>
+      <material><diffuse>0.0 0.8 0.8 1</diffuse></material></visual></link></model>
+
+    <!-- === SPHERE FARM (dense sphere cluster) === -->
+    <model name="sph_1"><static>true</static><pose>-45 -10 2 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>1.5</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>1.5</radius></sphere></geometry>
+      <material><diffuse>0.8 0.1 0.8 1</diffuse></material></visual></link></model>
+    <model name="sph_2"><static>true</static><pose>-48 -8 2 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>1.2</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>1.2</radius></sphere></geometry>
+      <material><diffuse>0.8 0.1 0.8 1</diffuse></material></visual></link></model>
+    <model name="sph_3"><static>true</static><pose>-42 -13 2 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>1.8</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>1.8</radius></sphere></geometry>
+      <material><diffuse>0.8 0.1 0.8 1</diffuse></material></visual></link></model>
+    <model name="sph_4"><static>true</static><pose>-45 -14 3.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>1.0</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>1.0</radius></sphere></geometry>
+      <material><diffuse>0.8 0.1 0.8 1</diffuse></material></visual></link></model>
+    <model name="sph_5"><static>true</static><pose>-50 -12 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>1.3</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>1.3</radius></sphere></geometry>
+      <material><diffuse>0.8 0.1 0.8 1</diffuse></material></visual></link></model>
+
+    <!-- === EXTRA BUILDINGS (far-field) === -->
+    <model name="bld_6"><static>true</static><pose>-50 20 6 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>5 5 12</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>5 5 12</size></box></geometry>
+      <material><diffuse>0.2 0.5 0.7 1</diffuse></material></visual></link></model>
+
+    <model name="bld_7"><static>true</static><pose>60 -20 4 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>6 4 8</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>6 4 8</size></box></geometry>
+      <material><diffuse>0.7 0.3 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="bld_8"><static>true</static><pose>70 5 8 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><box><size>4 4 16</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>4 4 16</size></box></geometry>
+      <material><diffuse>0.4 0.4 0.7 1</diffuse></material></visual></link></model>
+
+    <!-- === EXTRA PILLARS === -->
+    <model name="pillar_6"><static>true</static><pose>-22 -3 3 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.5</radius><length>6</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.5</radius><length>6</length></cylinder></geometry>
+      <material><diffuse>0.9 0.3 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="pillar_7"><static>true</static><pose>-24 -6 3.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.4</radius><length>7</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.4</radius><length>7</length></cylinder></geometry>
+      <material><diffuse>0.9 0.3 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="pillar_8"><static>true</static><pose>55 8 4 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.45</radius><length>8</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.45</radius><length>8</length></cylinder></geometry>
+      <material><diffuse>0.9 0.3 0.1 1</diffuse></material></visual></link></model>
+
+    <!-- === NO-FLY ZONES: 3 MORE === -->
+    <model name="nofly_zone_5">
+      <static>true</static><pose>55 0 0.05 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>20 10 0.1</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>20 10 0.1</size></box></geometry>
+        <material><ambient>0.9 0.0 0.0 0.6</ambient><diffuse>0.9 0.0 0.0 0.6</diffuse></material>
+      </visual></link></model>
+
+    <model name="nofly_zone_6">
+      <static>true</static><pose>-40 -8 0.05 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>15 12 0.1</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>15 12 0.1</size></box></geometry>
+        <material><ambient>0.9 0.0 0.0 0.6</ambient><diffuse>0.9 0.0 0.0 0.6</diffuse></material>
+      </visual></link></model>
+
+    <model name="nofly_zone_7">
+      <static>true</static><pose>0 30 0.05 0 0 0</pose>
+      <link name="l">
+        <collision name="c"><geometry><box><size>18 8 0.1</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>18 8 0.1</size></box></geometry>
+        <material><ambient>0.9 0.0 0.0 0.6</ambient><diffuse>0.9 0.0 0.0 0.6</diffuse></material>
+      </visual></link></model>
+
+
+    <!-- ============================================================
+         EXTRA OBSTACLES BATCH 3 — Added for AI Agent Challenge
+    ============================================================ -->
+
+    <!-- === DENSE COLUMN FOREST (x=-40, y=10 corridor) === -->
+    <model name="forest_col_1"><static>true</static><pose>-38 8 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.3</radius><length>5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.3</radius><length>5</length></cylinder></geometry>
+      <material><diffuse>0.6 0.2 0.8 1</diffuse></material></visual></link></model>
+
+    <model name="forest_col_2"><static>true</static><pose>-40 10 3 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.25</radius><length>6</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.25</radius><length>6</length></cylinder></geometry>
+      <material><diffuse>0.6 0.2 0.8 1</diffuse></material></visual></link></model>
+
+    <model name="forest_col_3"><static>true</static><pose>-42 12 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.35</radius><length>5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.35</radius><length>5</length></cylinder></geometry>
+      <material><diffuse>0.6 0.2 0.8 1</diffuse></material></visual></link></model>
+
+    <!-- === LOW-ALTITUDE PIPE LABYRINTH (x=10, y=20) === -->
+    <model name="pipe_low_1"><static>true</static><pose>10 20 2 0 1.5708 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.2</radius><length>10</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.2</radius><length>10</length></cylinder></geometry>
+      <material><diffuse>0.2 0.8 0.2 1</diffuse></material></visual></link></model>
+
+    <model name="pipe_low_2"><static>true</static><pose>10 24 3.5 0 1.5708 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.2</radius><length>12</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.2</radius><length>12</length></cylinder></geometry>
+      <material><diffuse>0.2 0.8 0.2 1</diffuse></material></visual></link></model>
+
+    <model name="pipe_vertical_1"><static>true</static><pose>15 22 2.5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.3</radius><length>5</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.3</radius><length>5</length></cylinder></geometry>
+      <material><diffuse>0.2 0.8 0.2 1</diffuse></material></visual></link></model>
+
+    <!-- === SCATTERED DEBRIS NEAR GOAL (x=50) === -->
+    <model name="debris_box_1"><static>true</static><pose>48 3 0.5 0 0 0.4</pose>
+      <link name="l"><collision name="c"><geometry><box><size>1 1 1</size></box></geometry></collision>
+      <visual name="v"><geometry><box><size>1 1 1</size></box></geometry>
+      <material><diffuse>0.5 0.5 0.5 1</diffuse></material></visual></link></model>
+
+    <model name="debris_sphere_1"><static>true</static><pose>52 -3 1 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><sphere><radius>0.8</radius></sphere></geometry></collision>
+      <visual name="v"><geometry><sphere><radius>0.8</radius></sphere></geometry>
+      <material><diffuse>0.4 0.4 0.4 1</diffuse></material></visual></link></model>
+
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person</uri><name>h1</name><pose>2 -34 4.25 0 0 1.5</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Walking person</uri><name>h2</name><pose>-5 -35 4.25 0 0 -0.8</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person</uri><name>h3</name><pose>8 -35.5 4.25 0 0 3.14</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Walking person</uri><name>h4</name><pose>0 -35 4.25 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Walking person</uri><name>h5</name><pose>-10 -38 0.1 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person</uri><name>h6</name><pose>12 -32 0.1 0 0 -1.2</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Walking person</uri><name>h7</name><pose>0 -30 0.1 0 0 0.5</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person</uri><name>h8</name><pose>-18 -35 0.1 0 0 2.1</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Walking person</uri><name>h9</name><pose>15 -36 0.1 0 0 -2.4</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person</uri><name>h10</name><pose>5 -42 0.1 0 0 1.1</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Walking person</uri><name>h11</name><pose>-5 -43 0.1 0 0 -0.5</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Standing person</uri><name>h12</name><pose>0 -45 0.1 0 0 0</pose></include>
+
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/SUV</uri><name>c1</name><pose>-15 -40 0.2 0 0 0</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Pickup</uri><name>c2</name><pose>15 -42 0.2 0 0 3.14</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Hatchback</uri><name>c3</name><pose>-12 -28 0.2 0 0 1.57</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/SUV</uri><name>c4</name><pose>12 -25 0.2 0 0 -1.57</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Pickup</uri><name>c5</name><pose>20 -35 0.2 0 0 0.7</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Hatchback</uri><name>c6</name><pose>-20 -35 0.2 0 0 -0.7</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/SUV</uri><name>c7</name><pose>0 -25 0.2 0 0 3.14</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Pickup</uri><name>c8</name><pose>-8 -45 0.2 0 0 1.57</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Hatchback</uri><name>c9</name><pose>8 -45 0.2 0 0 -1.57</pose></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/SUV</uri><name>c10</name><pose>-25 -30 0.2 0 0 0</pose></include>
+
+    <model name="inspection_bridge">
+      <static>true</static>
+      <pose>0 -35 4 0 0 0</pose>
+
+      <link name="deck">
+          <temperature>300.0</temperature>
+        <collision name="collision">
+          <geometry><box><size>20 4 0.5</size></box></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>20 4 0.5</size></box></geometry>
+          <material>
+            <ambient>0.3 0.3 0.3 1</ambient>
+            <diffuse>0.4 0.4 0.4 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="full_bridge_crack_overlay">
+        <pose>0 0 0.35 0 0 0</pose> 
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>20 4</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <pbr>
+              <metal>
+                <albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/textures/concrete_crack_albedo.png</albedo_map>
+                <normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/textures/concrete_crack_normal.png</normal_map>
+                <texture_scaling>10 2</texture_scaling>
+                <roughness>0.9</roughness>
+                <metalness>0.1</metalness>
+              </metal>
+            </pbr>
+          </material>
+        </visual>
+      </link>
+      
+      <link name="rail_left">
+        <pose>0 1.9 0.5 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>20 0.1 0.6</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>20 0.1 0.6</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="spall_L1"><pose>-9.5 1.96 0.5 0 0 0</pose><visual name="v"><geometry><plane><normal>0 1 0</normal><size>0.8 0.4</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse><pbr><metal><albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_albedo.png</albedo_map><normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_normal.png</normal_map><roughness_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_rough.png</roughness_map><texture_scaling>1 1</texture_scaling></metal></pbr></material></visual></link> 
+
+    <!--  <link name="spall_L4"><pose>-5.0 1.96 0.5 0 0 0</pose><visual name="v"><geometry><plane><normal>0 1 0</normal><size>0.6 0.6</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse><pbr><metal><albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_albedo.png</albedo_map><normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_normal.png</normal_map><roughness_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_rough.png</roughness_map><texture_scaling>1 1</texture_scaling></metal></pbr></material></visual></link> -->
+
+      <link name="spall_L7"><pose>-0.5 1.96 0.5 0 0 0</pose><visual name="v"><geometry><plane><normal>0 1 0</normal><size>1.5 0.5</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse><pbr><metal><albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_albedo.png</albedo_map><normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_normal.png</normal_map><roughness_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_rough.png</roughness_map><texture_scaling>1 1</texture_scaling></metal></pbr></material></visual></link>
+
+      <link name="spall_L10"><pose>4.0 1.96 0.5 0 0 0.4</pose><visual name="v"><geometry><plane><normal>0 1 0</normal><size>0.6 0.5</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse><pbr><metal><albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_albedo.png</albedo_map><normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_normal.png</normal_map><roughness_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_rough.png</roughness_map><texture_scaling>1 1</texture_scaling></metal></pbr></material></visual></link>
+
+      <link name="spall_L13"><pose>8.5 1.96 0.5 0 0 0</pose><visual name="v"><geometry><plane><normal>0 1 0</normal><size>0.9 0.4</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse><pbr><metal><albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_albedo.png</albedo_map><normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_normal.png</normal_map><roughness_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_rough.png</roughness_map><texture_scaling>1 1</texture_scaling></metal></pbr></material></visual></link>
+
+      <link name="spall_R1"><pose>-9.0 -1.96 0.5 0 0 0</pose><visual name="v"><geometry><plane><normal>0 -1 0</normal><size>1.0 0.5</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse><pbr><metal><albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_albedo.png</albedo_map><normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_normal.png</normal_map><roughness_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_rough.png</roughness_map><texture_scaling>1 1</texture_scaling></metal></pbr></material></visual></link>
+
+      <link name="spall_R4"><pose>-4.5 -1.96 0.5 0 0 -0.4</pose><visual name="v"><geometry><plane><normal>0 -1 0</normal><size>0.8 0.4</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse><pbr><metal><albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_albedo.png</albedo_map><normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_normal.png</normal_map><roughness_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_rough.png</roughness_map><texture_scaling>1 1</texture_scaling></metal></pbr></material></visual></link>
+
+      <link name="spall_R9"><pose>3.0 -1.96 0.6 0 0 0</pose><visual name="v"><geometry><plane><normal>0 -1 0</normal><size>1.2 0.4</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse><pbr><metal><albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_albedo.png</albedo_map><normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_normal.png</normal_map><roughness_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_rough.png</roughness_map><texture_scaling>1 1</texture_scaling></metal></pbr></material></visual></link>
+
+      <link name="spall_R12"><pose>7.5 -1.96 0.6 0 0 3.14</pose><visual name="v"><geometry><plane><normal>0 -1 0</normal><size>0.6 0.6</size></plane></geometry><material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse><pbr><metal><albedo_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_albedo.png</albedo_map><normal_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_normal.png</normal_map><roughness_map>/home/harsh/PX4-Autopilot/Tools/simulation/gz/models/bridge_materials/textures/concrete_spall_rough.png</roughness_map><texture_scaling>1 1</texture_scaling></metal></pbr></material></visual></link>
+
+
+      <link name="rail_right">
+        <pose>0 -1.9 0.5 0 0 0</pose>
+        <collision name="collision"><geometry><box><size>20 0.1 0.6</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>20 0.1 0.6</size></box></geometry>
+          <material><ambient>0.4 0.4 0.4 1</ambient><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+
+
+      <link name="support_1">
+        <pose>-9 0 -2 0 0 0</pose>
+          <temperature>285.0</temperature>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.5</radius><length>4</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.5</radius><length>4</length></cylinder></geometry>
+          <material><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="support_2">
+        <pose>9 0 -2 0 0 0</pose>
+          <temperature>285.0</temperature>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.5</radius><length>4</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.5</radius><length>4</length></cylinder></geometry>
+          <material><diffuse>0.5 0.5 0.5 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+    <model name="structural_damage_debris">
+      <static>true</static>
+      <pose>1.0 -33.0 4.26 0.5 0.2 1.5</pose>
+      <link name="link">
+        <temperature>380.0</temperature> <include>
+          <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Cinder Block</uri>
+        </include>
+      </link>
+    </model>
+    
+    <model name="real_world_steel_bridge">
+      <static>true</static>
+      <pose>0 50 8 0 0 0</pose> 
+      <include>
+        <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/Truss Bridge</uri>
+      </include>
+
+      <link name="pillar_cw"><pose>0.0 2.5 -1.87 0 0 0</pose>
+        <visual name="v"><geometry><cylinder><radius>0.8</radius><length>8</length></cylinder></geometry>
+        <material><diffuse>0.45 0.45 0.5 1</diffuse></material></visual></link>
+      
+      <link name="pillar_ce"><pose>0.0 -2.5 -1.87 0 0 0</pose>
+        <visual name="v"><geometry><cylinder><radius>0.8</radius><length>8</length></cylinder></geometry>
+        <material><diffuse>0.45 0.45 0.5 1</diffuse></material></visual></link>
+
+      <link name="fault_crack">
+        <pose>-4.0 1.5 4.26 0 0 0.5</pose>
+        <temperature>385.0</temperature>
+        <visual name="v"><geometry><box><size>0.1 2.0 0.02</size></box></geometry>
+        <material><diffuse>0.05 0.05 0.05 1</diffuse></material></visual></link>
+
+      <link name="fault_moisture">
+        <pose>6.0 1.2 4.26 0 0 0</pose>
+        <temperature>282.0</temperature>
+        <visual name="v"><geometry><box><size>2.5 1.5 0.01</size></box></geometry>
+        <material><ambient>0.1 0.1 0.2 1</ambient><diffuse>0.1 0.1 0.3 1</diffuse>
+        <specular>1.0 1.0 1.0 1</specular></material></visual></link>
+    </model>
+    <!-- === POWER LINE SIMULATION (x=30) === -->
+    <model name="power_line_pole_1"><static>true</static><pose>30 10 5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.15</radius><length>10</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.15</radius><length>10</length></cylinder></geometry>
+      <material><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="power_line_pole_2"><static>true</static><pose>30 -10 5 0 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.15</radius><length>10</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.15</radius><length>10</length></cylinder></geometry>
+      <material><diffuse>0.1 0.1 0.1 1</diffuse></material></visual></link></model>
+
+    <model name="power_line_wire"><static>true</static><pose>30 0 9 1.5708 0 0</pose>
+      <link name="l"><collision name="c"><geometry><cylinder><radius>0.03</radius><length>20</length></cylinder></geometry></collision>
+      <visual name="v"><geometry><cylinder><radius>0.03</radius><length>20</length></cylinder></geometry>
+      <material><diffuse>0.0 0.0 0.0 1</diffuse></material></visual></link></model>
+
+    <!-- ======================== SUN LIGHT ======================== -->
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 -0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+    </light>
+
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>37.412173</latitude_deg>
+      <longitude_deg>-121.998878</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+  </world>
+</sdf>
