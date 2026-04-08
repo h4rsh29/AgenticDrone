@@ -16,35 +16,23 @@ MISSION SELECTION RULES:
 - "Go to concrete bridge for full inspection" -> {"mission": "inspection", "target": "bridge", "x": 0.0, "y": -35.0, "z": 4.5}
 - "Go to steel bridge for full inspection" -> {"mission": "inspection", "target": "bridge", "x": 0.0, "y": 50.0, "z": 10.0}
 """
+# prompts.py
+
 INSPECTION_SYSTEM = """
-You are a Senior Structural Engineer specializing in infrastructure.
-Your task is to provide a technical breakdown of the structural elements.
-Analyze the provided visual data for:
-1. Concrete/Metal Integrity: Look for cracks, spalling, or rust.
-2. Anomaly Detection: Identify foreign objects or structural misalignments.
-3. Multi-Sensor Correlation: Compare the thermal feed (if available) with the visual structure.
-4. Describe the texture and visible faults in detail. 
-Output Format: CODE | [Component]: [Detailed Technical Description]
+You are a Senior Structural Engineer. Your task is to extract structural data from drone imagery.
+CRITICAL RULES:
+1. IGNORE people, vehicles, and T-shirt colors. They are irrelevant to the bridge's integrity.
+2. Search the VLM_RAW for keywords: 'reddish', 'jagged', 'pitted', 'lines', or 'stains'.
+3. If these keywords exist, set status to 'CRITICAL' and describe the concrete degradation.
+4. Set 'HEALTHY' only if the surface is described as smooth, uniform, or clean.
+Output Format: [STATUS_CODE] | [Professional Technical Description]
 """
-
-#INSPECTION_PROMPT = (
-#    "<image>\n"
-#    "Perform a technical inspection of this structure. "
-#    "Identify any thermal anomalies or physical cracks. "
-#    "Describe the texture, color, and any visible faults in detail. "
-#    "If a fault is found, respond: FAULT_FOUND | [Location]: [In-depth analysis of the issue]. "
-#    "If healthy, respond: PATH_SAFE | [Component]: [Reasoning for healthy status]."
-#)
-
 INSPECTION_PROMPT = (
     "<image>\n"
-    "Identify textures on the concrete bridge rail. "
-    "Do you see 'reddish jagged holes' or 'brick patterns'? "
-    "If damage is visible, say: Reddish spall detected. "
-    "If the surface is gray and smooth, say: Component is visually intact. "
-    "Do not use numbers or percentages in your answer."
+    "TECHNICAL REPORT:\n"
+    "Surface Material: Concrete\n"
+    "Visible Faults (spall/brick/hole):"
 )
-
 # 3. TEXT-BASED GOAL (Navigation Mode)
 # Replace [TARGET] with what you are looking for (e.g., "Red Box", "Tall Tree")
 NAV_SYSTEM = "You are a visual navigator. Your job is to tell the pilot when the target object has been reached."
@@ -61,12 +49,6 @@ You are a Surveillance Data Analyst. Your job is to list all objects of interest
 Objects of interest: humans, cars, dustbins, bikes.
 Output Format: OBJECT_REPORT | [Object: Count, Description]
 """
-INSPECTION_PROMPT = (
-    "<image>\n"
-    "TECHNICAL REPORT:\n"
-    "Surface Material: Concrete\n"
-    "Visible Faults (spall/brick/hole):"
-)
 SURVEILLANCE_PROMPT = (
     "<image>\n"
     "Identify all humans and vehicles in this image. "
