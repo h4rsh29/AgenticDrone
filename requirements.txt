@@ -1,12 +1,17 @@
 # Perception & AI
-ultralytics          # For YOLO object detection
-opencv-python        # For image processing and UI windows
-numpy                # For lidar data calculations
-ollama               # For Moondream VLM decision layer
+ultralytics         # For YOLOv8/v10/v26 object detection
+opencv-python       # For image processing and UI windows
+numpy               # For lidar and coordinate calculations
+torch               # Core library for YOLO and SmolVLM
+transformers        # Hugging Face library for SmolVLM-500M-Instruct
+langgraph           # For the mission state machine (StateGraph)
+Pillow              # For Image handling in perception_node
+accelerate          # Required for efficient Hugging Face model loading
+bitsandbytes        # For 4-bit quantization to fit models in 4GB VRAM
 
 # ROS 2 & Middleware (Note: these usually come with ROS 2 Humble)
-# rclpy              # ROS 2 Python client (System-level)
-# mavros_msgs        # MAVROS message definitions (System-level)
+# rclpy             # ROS 2 Python client (System-level)
+# mavros_msgs       # MAVROS message definitions (System-level)
 
 # Utilities
-protobuf==4.21.12    # Specifically for Gazebo transport message handling
+protobuf==4.21.12   # Specifically for Gazebo transport message compatibility
