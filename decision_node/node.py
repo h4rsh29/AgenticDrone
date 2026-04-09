@@ -379,8 +379,8 @@ class VLANode(Node):
             f.write(f"| **Total Records** | {total} |\n")
             f.write(f"| **Healthy Sections (🟢)** | {self.total_healthy} |\n")
             f.write(f"| **Critical Faults (🔴)** | {self.total_critical} |\n")
-            f.write(f"| **AI Confidence Avg** | {avg_conf:.1f}% |\n")
-            f.write(f"| **System Health** | **{'Optimal' if avg_conf > 85 else 'Check Sensors'}** |\n")
+           # f.write(f"| **AI Confidence Avg** | {avg_conf:.1f}% |\n")
+           # f.write(f"| **System Health** | **{'Optimal' if avg_conf > 85 else 'Check Sensors'}** |\n")
 
     def finalize_surveillance_analytics(self):
         """Appends the Intelligence Summary to surveillance_report.md"""
