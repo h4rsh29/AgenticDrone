@@ -77,10 +77,19 @@ class VLANode(Node):
             
             # Store what we want to do AFTER arriving
             self.intended_final_mission = plan['mission'] 
-            
-            # Reset logs
-            for log in ["surveillance_log.txt", "inspection_report.txt"]:
-                with open(log, "w") as f: f.write(f"--- SESSION: {plan['mission'].upper()} ---\n")
+            # Initialize professional Surveillance Report
+            with open("surveillance_report.md", "w") as f:
+                f.write("# 🛸 Mission Intelligence Report: Surveillance\n")
+                f.write(f"**Status:** `ACTIVE` | **Session ID:** `{plan['mission'].upper()}`\n\n")
+                f.write("--- \n\n")
+                f.write("## 📍 Intelligence Logs\n") # Removed the table header
+
+            # Initialize professional Inspection Report (.md)
+            with open("inspection_report.md", "w") as f:
+                f.write("# 🌉 Structural Inspection Report\n")
+                f.write(f"**Target:** `{plan['mission'].upper()}` | **System:** AgenticDrone\n\n")
+                f.write("--- \n\n")
+                f.write("## 🔍 Inspection Findings\n")
 
             # Pull coordinates from the AI plan, including the 'z' altitude
             gx = float(plan.get('x', 0.0))
@@ -247,10 +256,8 @@ class VLANode(Node):
                 img_path = os.path.join(save_dir, img_name)
                 cv2.imwrite(img_path, self.latest_frame)
 
-                # Log: Timestamp | X, Y | Image Filename | Description
-                log_entry = f"[{timestamp}] POS:({self.current_x:.1f}, {self.current_y:.1f}) | IMG: {img_name} | {ai_output['visual_analysis']}"
-                with open("surveillance_log.txt", "a") as f:
-                    f.write(log_entry + "\n")
+                # CALL THE NEW FUNCTION HERE
+                self.generate_surveillance_report(ai_output, img_name)
                 
                 self.get_logger().info(f"📸 DATA CAPTURED: {img_name} at ({self.current_x:.1f}, {self.current_y:.1f})")
                 actual_decision = "PATH_SAFE"
@@ -268,28 +275,54 @@ class VLANode(Node):
             self.get_logger().error(f"Thinking Failed: {e}")
         finally:
             torch.cuda.empty_cache()
-    def generate_inspection_report(self, ai_output, visual_path=None, thermal_path=None):
-        """Creates a descriptive, multi-sensor inspection log"""
+
+    def generate_surveillance_report(self, ai_output, img_name):
+        """Appends a structured entry to the Markdown dashboard"""
         timestamp = self.get_clock().now().to_msg().sec
-        report_file = "inspection_report.txt"
-
-        bridge_name = "STEEL_BRIDGE" if self.current_y > 0 else "CONCRETE_BRIDGE"
+        
+        # Identify if the scene is crowded based on VLM analysis
+        status = "CROWDED" if "person" in ai_output['visual_analysis'].lower() else "ACTIVE"
     
-        status = ai_output["final_decision"]
-        with open("inspection_report.txt", "a") as f:
-            f.write(f"\n{'#'*50}\n")
-            f.write(f"LOCATION: {bridge_name} | RECORD: {timestamp}\n")
-            f.write(f"COORDINATES: X: {self.current_x:.2f}, Y: {self.current_y:.2f}\n")
-            f.write(f"OVERALL STATUS: {status}\n")
-            f.write(f"VISUAL ANALYSIS: {ai_output['visual_analysis']}\n")
-            f.write(f"{'#'*50}\n")
-            if visual_path:
-                f.write(f"EVIDENCE: {os.path.basename(visual_path)}\n")
-            if thermal_path:
-                f.write(f"THERMAL PROOF: Attached ({os.path.basename(thermal_path)})\n")
-                # Optional: Logic to calculate if moisture is present based on pixel color
+        # Get the count summary we created in Step 1
+        object_counts = ai_output.get("yolo_report", "No data")
+        img_rel_path = f"detections/{img_name}"
 
-            f.write(f"{'#'*50}\n")       
+        with open("surveillance_report.md", "a") as f:
+            f.write(f"### 🛰️ Detection Record: `{timestamp}`\n")
+            f.write(f"- **Position:** `({self.current_x:.1f}, {self.current_y:.1f})` | **Status:** **[{status}]**\n")
+        
+            # --- NEW: LIVE COUNT SECTION ---
+            f.write(f"- **Live Object Counts:** `{object_counts}`\n") 
+        
+            f.write(f"- **Detailed Analysis:**\n\n{ai_output['visual_analysis']}\n\n")
+            f.write(f"**Evidence:**\n![Detection]({img_rel_path})\n\n")
+            f.write("---\n")
+
+    def generate_inspection_report(self, ai_output, visual_path=None, thermal_path=None):
+        """Creates a professional Markdown inspection log with embedded evidence"""
+        timestamp = self.get_clock().now().to_msg().sec
+        bridge_type = "STEEL_BRIDGE" if self.current_y > 0 else "CONCRETE_BRIDGE"
+        status = ai_output["final_decision"]
+        
+        # Color-coded status tags for instant visual recognition
+        status_tag = f"🔴 **{status}**" if status == "CRITICAL" else f"🟢 **{status}**"
+
+        with open("inspection_report.md", "a") as f:
+            f.write(f"### 📍 Record: `{timestamp}`\n")
+            f.write(f"- **Location:** {bridge_type} | **GPS:** `({self.current_x:.2f}, {self.current_y:.2f})`\n")
+            f.write(f"- **Status:** {status_tag}\n")
+            f.write(f"- **Analysis:** {ai_output['visual_analysis']}\n\n")
+            
+            # Embed image evidence directly in the report
+            # Note: We use the 'faults/' prefix so Markdown can find the files
+            if visual_path:
+                img_rel_path = f"faults/{os.path.basename(visual_path)}"
+                f.write(f"**Visual Evidence:**\n![Visual]({img_rel_path})\n\n")
+            if thermal_path:
+                therm_rel_path = f"faults/{os.path.basename(thermal_path)}"
+                f.write(f"**Thermal Proof:**\n![Thermal]({therm_rel_path})\n\n")
+            
+            f.write("---\n")     
 
 def main(args=None):
     rclpy.init(args=args)
