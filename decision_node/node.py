@@ -17,6 +17,8 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 import threading
 import time
 from models import yolo_model
+from datetime import datetime
+import re
 
 class VLANode(Node):
     def __init__(self):
@@ -32,6 +34,10 @@ class VLANode(Node):
         self.current_y = 0.0
         self.latest_thermal_frame = None
         self.intended_final_mission = "land"
+        self.total_healthy = 0
+        self.total_critical = 0
+        self.confidences = [] # To calculate AI Average
+        self.crowd_hotspots = [] # To store (x, y, person_count)
         self.latest_ai_results = None # To store boxes between AI thoughts
         cv2.namedWindow("Drone AI - Live Surveillance", cv2.WINDOW_NORMAL)
         cv2.startWindowThread()
@@ -74,6 +80,13 @@ class VLANode(Node):
     def command_cb(self, msg):
         try:
             plan = self.agent.understand_command(msg.data)
+
+            # --- INSERT THE NEW MANUAL SUMMARY TRIGGER HERE ---
+            # If we are currently in a mission and the new command is to land/nav, 
+            # we trigger the summary before switching tasks.
+            if self.agent.current_mission in ["inspection", "surveillance"]:
+                if plan['mission'] in ["land", "nav"]:
+                    self.trigger_mission_summary()
             
             # Store what we want to do AFTER arriving
             self.intended_final_mission = plan['mission'] 
@@ -118,6 +131,9 @@ class VLANode(Node):
                 self.get_logger().info("Navigation complete. Commanding Pilot to LAND.")
             else:
                 self.get_logger().info(f"Arrival confirmed. Starting {final_task} phase.")
+
+            if final_task == "land":
+                self.trigger_mission_summary()  
             
             # Send the final mission type to the Pilot
             self.agent.current_mission = final_task
@@ -211,6 +227,32 @@ class VLANode(Node):
 
         try:
             ai_output = self.agent.get_decision(self.temp_img_path, self.min_lidar_dist, target=target)
+            # 1. Save AI Confidence (for Average calculation)
+            if "detection_boxes" in ai_output:
+                for box in ai_output["detection_boxes"]:
+                    self.confidences.append(box["conf"])
+
+            # 2. Update Inspection Counters
+            if self.agent.current_mission == "inspection":
+                if ai_output["final_decision"] == "CRITICAL":
+                    self.total_critical += 1
+                else:
+                    self.total_healthy += 1
+
+            # 3. Update Surveillance Crowd Data
+            elif self.agent.current_mission == "surveillance":
+                raw_yolo = ai_output.get("yolo_report", "")
+                
+                # Extract the actual number after "Person: "
+                match = re.search(r"Person: (\d+)", raw_yolo)
+                person_count = int(match.group(1)) if match else 0
+                
+                if person_count > 0:
+                    self.crowd_hotspots.append({
+                        "x": self.current_x, 
+                        "y": self.current_y, 
+                        "count": person_count
+                    })
             self.latest_ai_results = ai_output
             self.desc_pub.publish(String(data=ai_output["visual_analysis"]))
             decision = ai_output["final_decision"]
@@ -279,6 +321,8 @@ class VLANode(Node):
     def generate_surveillance_report(self, ai_output, img_name):
         """Appends a structured entry to the Markdown dashboard"""
         timestamp = self.get_clock().now().to_msg().sec
+        # NEW: Create the readable format: 2026-04-09 | 14:45:01
+        readable_time = datetime.now().strftime("%Y-%m-%d | %H:%M:%S")
         
         # Identify if the scene is crowded based on VLM analysis
         status = "CROWDED" if "person" in ai_output['visual_analysis'].lower() else "ACTIVE"
@@ -290,17 +334,17 @@ class VLANode(Node):
         with open("surveillance_report.md", "a") as f:
             f.write(f"### 🛰️ Detection Record: `{timestamp}`\n")
             f.write(f"- **Position:** `({self.current_x:.1f}, {self.current_y:.1f})` | **Status:** **[{status}]**\n")
-        
-            # --- NEW: LIVE COUNT SECTION ---
-            f.write(f"- **Live Object Counts:** `{object_counts}`\n") 
-        
-            f.write(f"- **Detailed Analysis:**\n\n{ai_output['visual_analysis']}\n\n")
+            # NEW: Timestamp added under Position
+            f.write(f"- **Timestamp:** `{readable_time}`\n")
+            f.write(f"- **Live Counts:** `{object_counts}`\n\n")
+            f.write(f"#### 📜 Technical Analysis\n\n{ai_output['visual_analysis']}\n\n")
             f.write(f"**Evidence:**\n![Detection]({img_rel_path})\n\n")
             f.write("---\n")
 
     def generate_inspection_report(self, ai_output, visual_path=None, thermal_path=None):
         """Creates a professional Markdown inspection log with embedded evidence"""
         timestamp = self.get_clock().now().to_msg().sec
+        readable_time = datetime.now().strftime("%Y-%m-%d | %H:%M:%S")
         bridge_type = "STEEL_BRIDGE" if self.current_y > 0 else "CONCRETE_BRIDGE"
         status = ai_output["final_decision"]
         
@@ -310,6 +354,7 @@ class VLANode(Node):
         with open("inspection_report.md", "a") as f:
             f.write(f"### 📍 Record: `{timestamp}`\n")
             f.write(f"- **Location:** {bridge_type} | **GPS:** `({self.current_x:.2f}, {self.current_y:.2f})`\n")
+            f.write(f"- **Timestamp:** `{readable_time}`\n")
             f.write(f"- **Status:** {status_tag}\n")
             f.write(f"- **Analysis:** {ai_output['visual_analysis']}\n\n")
             
@@ -322,12 +367,65 @@ class VLANode(Node):
                 therm_rel_path = f"faults/{os.path.basename(thermal_path)}"
                 f.write(f"**Thermal Proof:**\n![Thermal]({therm_rel_path})\n\n")
             
-            f.write("---\n")     
+            f.write("---\n")  
+    def finalize_inspection_analytics(self):
+        """Appends the Structural Summary to inspection_report.md"""
+        total = self.total_healthy + self.total_critical
+        avg_conf = (sum(self.confidences) / len(self.confidences)) * 100 if self.confidences else 0
+        
+        with open("inspection_report.md", "a") as f:
+            f.write("\n## 📊 Final Structural Analytics\n")
+            f.write("| Metric | Value |\n| :--- | :--- |\n")
+            f.write(f"| **Total Records** | {total} |\n")
+            f.write(f"| **Healthy Sections (🟢)** | {self.total_healthy} |\n")
+            f.write(f"| **Critical Faults (🔴)** | {self.total_critical} |\n")
+            f.write(f"| **AI Confidence Avg** | {avg_conf:.1f}% |\n")
+            f.write(f"| **System Health** | **{'Optimal' if avg_conf > 85 else 'Check Sensors'}** |\n")
+
+    def finalize_surveillance_analytics(self):
+        """Appends the Intelligence Summary to surveillance_report.md"""
+        avg_conf = (sum(self.confidences) / len(self.confidences)) * 100 if self.confidences else 0
+        # Sort to find the top 3 densest areas
+        top_spots = sorted(self.crowd_hotspots, key=lambda x: x['count'], reverse=True)[:3]
+
+        with open("surveillance_report.md", "a") as f:
+            f.write("\n## 📊 Mission Intelligence Summary\n")
+            f.write("| Metric | Value |\n| :--- | :--- |\n")
+            f.write(f"| **Total Observations** | {len(self.confidences)} |\n")
+            f.write(f"| **AI Confidence Avg** | {avg_conf:.1f}% |\n")
+            f.write(f"| **System Health** | **Optimal** |\n\n")
+            
+            if top_spots:
+                f.write("### 📍 Crowd Density Map (Top Hotspots)\n")
+                for spot in top_spots:
+                    f.write(f"- `{spot['count']} People` detected at GPS `({spot['x']:.1f}, {spot['y']:.1f})`\n")           
+    
+    def trigger_mission_summary(self):
+        """Checks the current mission and writes the correct summary table"""
+        if self.agent.current_mission == "inspection":
+            self.get_logger().info("Manual Stop: Finalizing Inspection Report...")
+            self.finalize_inspection_analytics()
+        elif self.agent.current_mission == "surveillance":
+            self.get_logger().info("Manual Stop: Finalizing Surveillance Report...")
+            self.finalize_surveillance_analytics()
+    def destroy_node(self):
+        """Ensures the report is saved even if you Ctrl+C the terminal"""
+        self.get_logger().info("Shutting down... saving final mission analytics.")
+        self.trigger_mission_summary()
+        super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
-    rclpy.spin(VLANode())
-    rclpy.shutdown()
+    node = VLANode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info("Keyboard Interrupt detected!")
+    finally:
+        # destroy_node ALREADY calls trigger_mission_summary(), 
+        # so we only need to call destroy_node here.
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
