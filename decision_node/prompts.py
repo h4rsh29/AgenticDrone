@@ -12,9 +12,11 @@ MISSION SELECTION RULES:
 3. If the user mentions "Concrete Bridge", use y=-35.0, z=4.5.
 4. If the user mentions "Steel Bridge", use x=0.0, y=50.0, z=10.0.
 5. If the user wants to patrol or search an area for objects, use 'surveillance'.
+6. If the user mentions 'land' or 'commander land', use 'land'. If no location is specified, do not return x, y, or z unless a specific location is mentioned.
 
 - "Go to concrete bridge for full inspection" -> {"mission": "inspection", "target": "bridge", "x": 0.0, "y": -35.0, "z": 4.5}
 - "Go to steel bridge for full inspection" -> {"mission": "inspection", "target": "bridge", "x": 0.0, "y": 50.0, "z": 10.0}
+- "commander land" -> {"mission": "land"}
 """
 # prompts.py
 
@@ -49,17 +51,26 @@ NAV_PROMPT = (
     "If you are still searching and don't see it yet, respond with exactly one word: PATH_SAFE.\n"
 )
 
-# 4. SEARCH & RESCUE (Emergency Mode)
+# prompts.py
+
 SURVEILLANCE_SYSTEM = """
-You are a Surveillance Data Analyst. Your job is to list all objects of interest seen in the frame.
-Objects of interest: humans, cars, dustbins, bikes.
-Output Format: OBJECT_REPORT | [Object: Count, Description]
+You are a Tactical Surveillance Analyst. 
+Your job is to categorize the scene and inventory all dynamic entities.
+
+STRICT RULES:
+1. Activity Levels: [CLEAR] (no entities), [ACTIVE] (1-3 entities), [CROWDED] (4+ entities).
+2. Identify: Object type, color, and location (e.g., "Red SUV, center-right").
+3. IGNORE structural defects here; focus ONLY on people and vehicles.
+
+Format:
+[ACTIVITY_LEVEL] | [Full Object Inventory]
 """
+
 SURVEILLANCE_PROMPT = (
     "<image>\n"
-    "Identify all humans and vehicles in this image. "
-    "List their colors and locations clearly. "
-    "If the area is empty, say 'Scanning...'"
+    "Perform an area scan for personnel and vehicles.\n"
+    "Briefly describe colors and positions.\n"
+    "Tactical Summary: "
 )
 
 
